@@ -16,10 +16,10 @@ ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 # Install torch CPU-only first (avoids pulling CUDA libs)
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Install project with API extras
+# Install project with API extras + sentencepiece for HHEM tokenizer
 COPY pyproject.toml .
 COPY sage/ sage/
-RUN pip install --no-cache-dir ".[api]"
+RUN pip install --no-cache-dir ".[api]" sentencepiece
 
 # Store models in /app/.cache so non-root user can access them
 ENV HF_HOME=/app/.cache/huggingface
@@ -29,11 +29,11 @@ RUN python -c "\
 from sentence_transformers import SentenceTransformer; \
 SentenceTransformer('intfloat/e5-small-v2')"
 
-# Pre-download HHEM model
+# Pre-download HHEM model (requires trust_remote_code for custom model)
 RUN python -c "\
 from transformers import AutoModelForSequenceClassification, AutoTokenizer; \
-AutoTokenizer.from_pretrained('vectara/hallucination_evaluation_model'); \
-AutoModelForSequenceClassification.from_pretrained('vectara/hallucination_evaluation_model')"
+AutoTokenizer.from_pretrained('vectara/hallucination_evaluation_model', trust_remote_code=True); \
+AutoModelForSequenceClassification.from_pretrained('vectara/hallucination_evaluation_model', trust_remote_code=True)"
 
 # Fix ownership for non-root user
 RUN chown -R sage:sage /app
