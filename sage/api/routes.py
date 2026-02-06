@@ -30,7 +30,6 @@ from sage.config import MAX_EVIDENCE, get_logger
 from sage.core import (
     AggregationMethod,
     ExplanationResult,
-    HallucinationResult,
     ProductScore,
     verify_citations,
 )
@@ -227,20 +226,10 @@ def recommend(
                     product=product,
                     max_evidence=MAX_EVIDENCE,
                 )
-                if detector is not None:
-                    hr = detector.check_explanation(
-                        evidence_texts=er.evidence_texts,
-                        explanation=er.explanation,
-                    )
-                else:
-                    # Lite mode: HHEM disabled, skip hallucination check
-                    hr = HallucinationResult(
-                        score=-1.0,
-                        is_hallucinated=False,
-                        threshold=0.5,
-                        explanation=er.explanation,
-                        premise_length=0,
-                    )
+                hr = detector.check_explanation(
+                    evidence_texts=er.evidence_texts,
+                    explanation=er.explanation,
+                )
                 cr = verify_citations(
                     er.explanation, er.evidence_ids, er.evidence_texts
                 )
@@ -257,18 +246,11 @@ def recommend(
             ):
                 rec = _build_product_dict(i, product)
                 rec["explanation"] = er.explanation
-                if hr.score >= 0:
-                    rec["confidence"] = {
-                        "hhem_score": round(hr.score, 3),
-                        "is_grounded": not hr.is_hallucinated,
-                        "threshold": hr.threshold,
-                    }
-                else:
-                    # Lite mode: HHEM disabled
-                    rec["confidence"] = {
-                        "hhem_disabled": True,
-                        "note": "HHEM verification unavailable in lite mode",
-                    }
+                rec["confidence"] = {
+                    "hhem_score": round(hr.score, 3),
+                    "is_grounded": not hr.is_hallucinated,
+                    "threshold": hr.threshold,
+                }
                 rec["citations_verified"] = cr.all_valid
                 rec["evidence_sources"] = _build_evidence_list(er)
                 recommendations.append(rec)
