@@ -109,7 +109,7 @@ class HallucinationDetector:
 
         # Move to device
         if device == "cuda" and torch.cuda.is_available():
-            self.model = self.model.to(device)
+            self.model = self.model.to(device)  # type: ignore[arg-type]
             self.device = "cuda"
         else:
             self.device = "cpu"

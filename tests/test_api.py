@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from sage.api.routes import router
-from sage.core.models import ExplanationResult, HallucinationResult, ProductScore, RetrievedChunk
+from sage.core.models import ProductScore, RetrievedChunk
 
 
 def _make_app(**state_overrides) -> FastAPI:
@@ -50,7 +50,6 @@ def client():
 
 class TestHealthEndpoint:
     def test_healthy_when_collection_exists(self):
-        from sage.adapters import vector_store
         mock_qdrant = MagicMock()
         app = _make_app(qdrant=mock_qdrant)
 

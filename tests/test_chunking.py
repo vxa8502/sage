@@ -1,7 +1,5 @@
 """Tests for sage.core.chunking — pure text processing functions."""
 
-import pytest
-
 from sage.core.chunking import (
     estimate_tokens,
     find_split_points,
@@ -87,8 +85,8 @@ class TestSlidingWindowChunk:
         chunks = sliding_window_chunk(text, chunk_size=30, overlap=10)
         if len(chunks) >= 2:
             # With overlap, adjacent chunks should share some text
-            words_0 = set(chunks[0].split())
-            words_1 = set(chunks[1].split())
+            _words_0 = set(chunks[0].split())
+            _words_1 = set(chunks[1].split())
             # At least some overlap is expected (not guaranteed to be exact)
             assert len(chunks) > 1
 

@@ -1,7 +1,5 @@
 """Tests for sage.core.verification — quote, citation, and forbidden phrase checks."""
 
-import pytest
-
 from sage.core.verification import (
     check_forbidden_phrases,
     extract_citations,

@@ -321,9 +321,10 @@ def verify_citation(
     partial = " ".join(quote_words[:3]) if len(quote_words) >= 3 else None
 
     for idx in matching_indices:
-        source_text = evidence_texts[idx] if idx < len(evidence_texts) else None
-        if not source_text:
+        chunk_text = evidence_texts[idx] if idx < len(evidence_texts) else None
+        if not chunk_text:
             continue
+        source_text = chunk_text
         source_norm = normalize_text(source_text)
 
         if quote_norm in source_norm:

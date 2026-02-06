@@ -297,15 +297,12 @@ def hybrid_recommend(
     history_query = " ".join(history_texts)
 
     # Get products to exclude
-    exclude_products = (
-        {
-            h.get("product_id") or h.get("parent_asin")
-            for h in user_history
-            if h.get("product_id") or h.get("parent_asin")
-        }
-        if user_history
-        else set()
-    )
+    exclude_products: set[str] = set()
+    if user_history:
+        for h in user_history:
+            pid = h.get("product_id") or h.get("parent_asin")
+            if isinstance(pid, str):
+                exclude_products.add(pid)
 
     # Warming user: blend content + history
     if warmup_level == "warming":

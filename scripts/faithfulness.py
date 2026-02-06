@@ -27,7 +27,6 @@ from sage.core import AggregationMethod
 from sage.config import (
     EVALUATION_QUERIES,
     FAITHFULNESS_TARGET,
-    HALLUCINATION_THRESHOLD,
     MAX_EVIDENCE,
     RESULTS_DIR,
     get_logger,

@@ -18,7 +18,6 @@ Run from project root:
 
 import json
 from collections import Counter
-from pathlib import Path
 
 from sage.config import DATA_DIR, get_logger, log_banner, log_section
 from sage.core import EvalCase

@@ -170,7 +170,7 @@ from sage.utils import save_results  # noqa: E402
 # Logging
 # ---------------------------------------------------------------------------
 
-from sage.config.logging import (
+from sage.config.logging import (  # noqa: E402
     get_logger,
     configure_logging,
     log_banner,

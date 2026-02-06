@@ -195,7 +195,7 @@ def search(
         )
 
     if conditions:
-        query_filter = Filter(must=conditions)
+        query_filter = Filter(must=conditions)  # type: ignore[arg-type]
 
     results = client.query_points(
         collection_name=collection_name,

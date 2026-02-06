@@ -23,12 +23,10 @@ import numpy as np
 
 from sage.core import AggregationMethod, ProductScore, RetrievedChunk
 from sage.config import (
-    HALLUCINATION_THRESHOLD,
     LLM_PROVIDER,
     get_logger,
     log_banner,
     log_section,
-    log_kv,
 )
 from sage.services.retrieval import get_candidates
 

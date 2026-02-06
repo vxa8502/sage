@@ -22,7 +22,6 @@ from sage.core import (
     generate_refusal_message,
     verify_citations,
     verify_explanation,
-    EXPLANATION_SYSTEM_PROMPT,
     STRICT_SYSTEM_PROMPT,
 )
 

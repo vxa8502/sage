@@ -331,20 +331,20 @@ def bootstrap_confidence_interval(
     if not scores:
         return (0.0, 0.0, 0.0)
 
-    scores = np.array(scores)
-    n = len(scores)
+    scores_arr = np.array(scores)
+    n = len(scores_arr)
 
     rng = np.random.default_rng(seed)
 
-    bootstrap_means = []
+    bootstrap_samples: list[float] = []
     for _ in range(n_bootstrap):
-        sample = rng.choice(scores, size=n, replace=True)
-        bootstrap_means.append(sample.mean())
+        sample = rng.choice(scores_arr, size=n, replace=True)
+        bootstrap_samples.append(float(sample.mean()))
 
-    bootstrap_means = np.array(bootstrap_means)
+    bootstrap_arr = np.array(bootstrap_samples)
 
     alpha = 1 - confidence
-    lower = np.percentile(bootstrap_means, 100 * alpha / 2)
-    upper = np.percentile(bootstrap_means, 100 * (1 - alpha / 2))
+    lower = np.percentile(bootstrap_arr, 100 * alpha / 2)
+    upper = np.percentile(bootstrap_arr, 100 * (1 - alpha / 2))
 
-    return (float(scores.mean()), float(lower), float(upper))
+    return (float(scores_arr.mean()), float(lower), float(upper))

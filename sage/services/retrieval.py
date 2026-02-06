@@ -346,7 +346,10 @@ def recommend_for_user(
     pseudo_query = " ".join(texts)
 
     # Get products to exclude
-    exclude = {r.get("product_id") for r in user_history if r.get("product_id")}
+    exclude: set[str] = {
+        pid for r in user_history
+        if (pid := r.get("product_id")) is not None and isinstance(pid, str)
+    }
 
     return recommend(
         query=pseudo_query,

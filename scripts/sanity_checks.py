@@ -24,17 +24,11 @@ import numpy as np
 
 from sage.core import AggregationMethod, ProductScore, RetrievedChunk
 from sage.config import (
-    CONFIDENCE_HIGH_THRESHOLD,
-    CONFIDENCE_MED_THRESHOLD,
     DATA_DIR,
     EVALUATION_QUERIES,
-    FAITHFULNESS_HIGH_THRESHOLD,
-    FAITHFULNESS_LOW_THRESHOLD,
-    HALLUCINATION_THRESHOLD,
     get_logger,
     log_banner,
     log_section,
-    log_kv,
 )
 from sage.services.retrieval import get_candidates
 
@@ -174,7 +168,7 @@ def run_empty_context_tests():
         product = ProductScore(product_id="TEST", score=0.3, chunk_count=1, avg_rating=3.0, evidence=[chunk])
 
         result = explainer.generate_explanation(case["query"], product, max_evidence=1)
-        hhem = detector.check_explanation(result.evidence_texts, result.explanation)
+        _hhem = detector.check_explanation(result.evidence_texts, result.explanation)
 
         graceful = any(w in result.explanation.lower() for w in refusal_words)
 

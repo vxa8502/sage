@@ -163,7 +163,12 @@ class AnthropicClient:
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
-            text = response.content[0].text
+            # Extract text from first TextBlock
+            text = ""
+            for block in response.content:
+                if hasattr(block, "text"):
+                    text = block.text
+                    break
             tokens = response.usage.input_tokens + response.usage.output_tokens
             return text, tokens
         except self._api_errors as exc:
@@ -285,8 +290,8 @@ class OpenAIClient:
                     {"role": "user", "content": user},
                 ],
             )
-            text = response.choices[0].message.content
-            tokens = response.usage.total_tokens
+            text = response.choices[0].message.content or ""
+            tokens = response.usage.total_tokens if response.usage else 0
             return text, tokens
         except self._api_errors as exc:
             _translate_api_error(exc, self._sdk, self._name)

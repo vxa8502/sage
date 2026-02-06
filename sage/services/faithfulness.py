@@ -108,11 +108,11 @@ def get_ragas_llm(provider: str | None = None):
         except ImportError:
             raise ImportError("anthropic package required for RAGAS with Claude")
 
-        client = Anthropic()
+        anthropic_client = Anthropic()
         return llm_factory(
             ANTHROPIC_MODEL,
             provider="anthropic",
-            client=client,
+            client=anthropic_client,
         )
     elif provider == "openai":
         try:
@@ -120,8 +120,8 @@ def get_ragas_llm(provider: str | None = None):
         except ImportError:
             raise ImportError("openai package required for RAGAS with OpenAI")
 
-        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-        return llm_factory(OPENAI_MODEL, client=client)
+        openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        return llm_factory(OPENAI_MODEL, client=openai_client)
     else:
         raise ValueError(f"Unknown provider: {provider}")
 

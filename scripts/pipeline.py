@@ -19,7 +19,6 @@ Run from project root.
 """
 
 import argparse
-import sys
 
 import numpy as np
 
@@ -45,7 +44,6 @@ from sage.adapters.vector_store import (
     upload_chunks,
     get_collection_info,
     create_payload_indexes,
-    collection_exists,
     search,
 )
 

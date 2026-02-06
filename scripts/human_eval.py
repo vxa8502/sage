@@ -24,7 +24,6 @@ import json
 import math
 import sys
 from datetime import datetime
-from pathlib import Path
 
 from sage.core import AggregationMethod
 from sage.config import (
@@ -36,7 +35,6 @@ from sage.config import (
     RESULTS_DIR,
     get_logger,
     log_banner,
-    log_section,
     save_results,
 )
 
@@ -416,7 +414,6 @@ def _manual_spearman(x: list[float], y: list[float]) -> dict | None:
 
 def _t_cdf_approx(t: float, df: int) -> float:
     """Rough t-distribution CDF approximation (good enough for p < 0.05 checks)."""
-    x = df / (df + t * t)
     # Regularized incomplete beta function approximation
     # For df > 30, normal approximation is fine
     if df > 30:

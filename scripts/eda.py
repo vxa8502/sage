@@ -70,7 +70,7 @@ plt.tight_layout()
 plt.savefig(FIGURES_DIR / "rating_distribution.png", dpi=150)
 plt.show()
 
-print(f"\nRating breakdown:")
+print("\nRating breakdown:")
 for rating, count in rating_counts.items():
     pct = count / len(df) * 100
     print(f"  {int(rating)} stars: {count:,} ({pct:.1f}%)")
@@ -105,7 +105,7 @@ plt.savefig(FIGURES_DIR / "review_lengths.png", dpi=150)
 plt.show()
 
 needs_chunking = (df["estimated_tokens"] > 200).sum()
-print(f"\nReview length stats:")
+print("\nReview length stats:")
 print(f"  Median characters: {df['text_length'].median():.0f}")
 print(f"  Median tokens (est): {df['estimated_tokens'].median():.0f}")
 print(f"  Reviews > 200 tokens: {needs_chunking:,} ({needs_chunking/len(df)*100:.1f}%)")
@@ -144,7 +144,7 @@ plt.tight_layout()
 plt.savefig(FIGURES_DIR / "reviews_over_time.png", dpi=150)
 plt.show()
 
-print(f"\nTemporal range:")
+print("\nTemporal range:")
 print(f"  Earliest: {df['datetime'].min()}")
 print(f"  Latest: {df['datetime'].max()}")
 
@@ -201,12 +201,12 @@ plt.tight_layout()
 plt.savefig(FIGURES_DIR / "user_item_distribution.png", dpi=150)
 plt.show()
 
-print(f"\nUser activity:")
+print("\nUser activity:")
 print(f"  Users with 1 review: {(user_counts == 1).sum():,} ({(user_counts == 1).sum()/len(user_counts)*100:.1f}%)")
 print(f"  Users with 5+ reviews: {(user_counts >= 5).sum():,}")
 print(f"  Max reviews by one user: {user_counts.max()}")
 
-print(f"\nItem popularity:")
+print("\nItem popularity:")
 print(f"  Items with 1 review: {(item_counts == 1).sum():,} ({(item_counts == 1).sum()/len(item_counts)*100:.1f}%)")
 print(f"  Items with 5+ reviews: {(item_counts >= 5).sum():,}")
 print(f"  Max reviews for one item: {item_counts.max()}")
@@ -216,7 +216,7 @@ users_5plus = set(user_counts[user_counts >= 5].index)
 items_5plus = set(item_counts[item_counts >= 5].index)
 
 eligible_mask = df["user_id"].isin(users_5plus) & df["parent_asin"].isin(items_5plus)
-print(f"\n5-core filtering preview:")
+print("\n5-core filtering preview:")
 print(f"  Reviews eligible (first pass): {eligible_mask.sum():,} ({eligible_mask.sum()/len(df)*100:.1f}%)")
 
 # %% Sample reviews across length buckets

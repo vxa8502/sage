@@ -1,7 +1,5 @@
 """Tests for sage.services.faithfulness — refusal detection and adjusted metrics."""
 
-import pytest
-
 from sage.services.faithfulness import (
     is_mismatch_warning,
     is_refusal,

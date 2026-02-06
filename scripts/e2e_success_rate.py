@@ -20,7 +20,6 @@ from datetime import datetime
 
 from sage.config import (
     DATA_DIR,
-    EVALUATION_QUERIES,
     get_logger,
     log_banner,
     log_section,
@@ -208,7 +207,7 @@ def run_e2e_evaluation(n_samples: int = 20) -> E2EReport:
             )
             explanation = result.explanation
             evidence_texts = result.evidence_texts
-        except Exception as e:
+        except Exception:
             logger.exception("  Error generating explanation")
             continue
 

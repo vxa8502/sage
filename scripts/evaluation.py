@@ -22,9 +22,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-
-from sage.core import AggregationMethod, EvalCase
+from sage.core import AggregationMethod
 from sage.services.baselines import (
     ItemKNNBaseline,
     PopularityBaseline,
