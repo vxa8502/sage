@@ -123,7 +123,7 @@ demo: check-env
 # Full Pipeline
 # ---------------------------------------------------------------------------
 
-all: data eval demo
+all: qdrant-up data eval demo
 	@python scripts/summary.py
 
 # ---------------------------------------------------------------------------
