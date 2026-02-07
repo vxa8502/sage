@@ -5,6 +5,8 @@
 # data distributions, quality issues, and inform modeling decisions.
 
 # %% Imports
+from pathlib import Path
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -315,8 +317,6 @@ print(f"Data quality issues: {empty_reviews + very_short + duplicate_texts}")
 print(f"\nPlots saved to: {FIGURES_DIR}")
 
 # %% Generate markdown report
-from pathlib import Path
-
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
 
