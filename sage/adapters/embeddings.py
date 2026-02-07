@@ -13,12 +13,12 @@ the content words overlap. Mitigation: use rating filters to enforce sentiment
 alignment (negative reviews typically have low ratings).
 """
 
-import threading
 from pathlib import Path
 
 import numpy as np
 
 from sage.config import EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL, get_logger
+from sage.utils import require_import, thread_safe_singleton
 
 logger = get_logger(__name__)
 
@@ -40,13 +40,8 @@ class E5Embedder:
         Raises:
             ImportError: If sentence_transformers is not installed.
         """
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError:
-            raise ImportError(
-                "sentence_transformers package required. "
-                "Install with: pip install sentence-transformers"
-            )
+        st = require_import("sentence_transformers", pip_name="sentence-transformers")
+        SentenceTransformer = st.SentenceTransformer
 
         logger.info("Loading embedding model: %s", model_name)
         self.model = SentenceTransformer(model_name)
@@ -152,16 +147,7 @@ class E5Embedder:
         return self.embed_queries([query])[0]
 
 
-# Module-level singleton for convenience
-_embedder: E5Embedder | None = None
-_embedder_lock = threading.Lock()
-
-
+@thread_safe_singleton
 def get_embedder() -> E5Embedder:
     """Get or create the global embedder instance (thread-safe singleton)."""
-    global _embedder
-    if _embedder is None:
-        with _embedder_lock:
-            if _embedder is None:
-                _embedder = E5Embedder()
-    return _embedder
+    return E5Embedder()

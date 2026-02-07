@@ -43,8 +43,7 @@ PRODUCTS_PER_QUERY = 2
 
 def run_basic_tests():
     """Test basic explanation generation and HHEM detection."""
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
+    from scripts.lib.services import get_explanation_services
 
     log_banner(logger, "BASIC EXPLANATION TESTS")
     logger.info("Using LLM provider: %s", LLM_PROVIDER)
@@ -71,7 +70,7 @@ def run_basic_tests():
 
     # Generate explanations
     log_section(logger, "2. GENERATING EXPLANATIONS")
-    explainer = Explainer()
+    explainer, detector = get_explanation_services()
     all_explanations = []
 
     for query, products in query_results.items():
@@ -84,7 +83,6 @@ def run_basic_tests():
 
     # Run HHEM
     log_section(logger, "3. HHEM HALLUCINATION DETECTION")
-    detector = HallucinationDetector()
     hhem_results = [
         detector.check_explanation(expl.evidence_texts, expl.explanation)
         for expl in all_explanations
@@ -108,9 +106,7 @@ def run_basic_tests():
         logger.info("Streaming: ")
 
         stream = explainer.generate_explanation_stream(test_query, test_product)
-        chunks = []
-        for token in stream:
-            chunks.append(token)
+        chunks = list(stream)
         logger.info("".join(chunks))
 
         streamed_result = stream.get_complete_result()

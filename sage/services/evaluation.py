@@ -21,6 +21,7 @@ from typing import Callable
 import numpy as np
 
 from sage.core import EvalCase, EvalResult, MetricsReport
+from sage.utils import normalize_vectors
 
 
 # Core ranking metrics
@@ -108,10 +109,7 @@ def intra_list_diversity(embeddings: np.ndarray) -> float:
     if n < 2:
         return 0.0
 
-    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-    norms = np.where(norms == 0, 1, norms)
-    normalized = embeddings / norms
-
+    normalized = normalize_vectors(embeddings)
     similarities = normalized @ normalized.T
     distances = 1 - similarities
     upper_tri = np.triu(distances, k=1)

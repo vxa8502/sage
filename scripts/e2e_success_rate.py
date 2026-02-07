@@ -20,6 +20,7 @@ from datetime import datetime
 
 from sage.config import (
     E2E_EVAL_QUERIES,
+    FAITHFULNESS_TARGET,
     RESULTS_DIR,
     get_logger,
     log_banner,
@@ -103,8 +104,7 @@ class E2EReport:
 
 def run_e2e_evaluation(n_samples: int = 20) -> E2EReport:
     """Run end-to-end success rate evaluation."""
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
+    from scripts.lib.services import get_explanation_services
     from sage.services.faithfulness import (
         is_refusal,
         is_mismatch_warning,
@@ -116,8 +116,7 @@ def run_e2e_evaluation(n_samples: int = 20) -> E2EReport:
     log_banner(logger, "END-TO-END SUCCESS RATE EVALUATION")
     logger.info("Samples: %d", len(queries))
 
-    explainer = Explainer()
-    detector = HallucinationDetector()
+    explainer, detector = get_explanation_services()
 
     all_cases: list[CaseResult] = []
     case_id = 0
@@ -290,8 +289,6 @@ def run_e2e_evaluation(n_samples: int = 20) -> E2EReport:
     raw_e2e = n_raw_success / n_total if n_total > 0 else 0
     adjusted_e2e = n_adjusted_success / n_total if n_total > 0 else 0
 
-    target = 0.85
-
     report = E2EReport(
         timestamp=datetime.now().isoformat(),
         n_total=n_total,
@@ -305,9 +302,9 @@ def run_e2e_evaluation(n_samples: int = 20) -> E2EReport:
         hhem_pass_rate=hhem_pass_rate,
         raw_e2e_success_rate=raw_e2e,
         adjusted_e2e_success_rate=adjusted_e2e,
-        target=target,
-        meets_target=adjusted_e2e >= target,
-        gap_to_target=target - adjusted_e2e,
+        target=FAITHFULNESS_TARGET,
+        meets_target=adjusted_e2e >= FAITHFULNESS_TARGET,
+        gap_to_target=FAITHFULNESS_TARGET - adjusted_e2e,
     )
 
     # Print report
@@ -359,7 +356,7 @@ def run_e2e_evaluation(n_samples: int = 20) -> E2EReport:
         n_total,
         adjusted_e2e * 100,
     )
-    logger.info("Target:                   %.1f%%", target * 100)
+    logger.info("Target:                   %.1f%%", FAITHFULNESS_TARGET * 100)
     logger.info("Gap to target:            %.1f%%", report.gap_to_target * 100)
     logger.info("Meets target:             %s", "YES" if report.meets_target else "NO")
 

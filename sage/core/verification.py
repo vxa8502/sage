@@ -19,6 +19,7 @@ from sage.core.models import (
     QuoteVerification,
     VerificationResult,
 )
+from sage.utils import normalize_text
 
 
 # Forbidden phrases that violate prompt constraints.
@@ -104,21 +105,6 @@ def extract_quotes(text: str, min_length: int = 4) -> list[str]:
     # Filter short quotes and deduplicate
     quotes = [q.strip() for q in quotes if len(q.strip()) >= min_length]
     return list(dict.fromkeys(quotes))  # Preserve order, remove duplicates
-
-
-def normalize_text(text: str) -> str:
-    """
-    Normalize text for fuzzy matching.
-
-    Converts to lowercase and collapses whitespace.
-
-    Args:
-        text: Text to normalize.
-
-    Returns:
-        Normalized text string.
-    """
-    return " ".join(text.lower().split())
 
 
 def verify_quote_in_evidence(

@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from sage.config import COLLECTION_NAME
+from sage.utils import normalize_vectors
 
 
 class RandomBaseline:
@@ -122,9 +123,7 @@ class ItemKNNBaseline:
         )
 
         # Normalize embeddings for cosine similarity
-        norms = np.linalg.norm(self.embeddings, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1, norms)
-        self.embeddings_norm = self.embeddings / norms
+        self.embeddings_norm = normalize_vectors(self.embeddings)
 
         self.embedder = embedder
 
@@ -146,7 +145,7 @@ class ItemKNNBaseline:
 
         # Embed query
         query_emb = self.embedder.embed_single_query(query)
-        query_emb = query_emb / (np.linalg.norm(query_emb) + 1e-8)
+        query_emb = normalize_vectors(query_emb)
 
         # Compute similarities (dot product of normalized vectors = cosine)
         similarities = self.embeddings_norm @ query_emb
@@ -192,8 +191,7 @@ def build_product_embeddings(
             )
 
         # Normalize
-        agg_emb = agg_emb / (np.linalg.norm(agg_emb) + 1e-8)
-        product_embeddings[product_id] = agg_emb
+        product_embeddings[product_id] = normalize_vectors(agg_emb)
 
     return product_embeddings
 
@@ -241,7 +239,6 @@ def load_product_embeddings_from_qdrant() -> dict[str, np.ndarray]:
     product_embeddings = {}
     for product_id, vectors in product_vectors.items():
         mean_vec = np.mean(vectors, axis=0)
-        mean_vec = mean_vec / (np.linalg.norm(mean_vec) + 1e-8)
-        product_embeddings[product_id] = mean_vec
+        product_embeddings[product_id] = normalize_vectors(mean_vec)
 
     return product_embeddings

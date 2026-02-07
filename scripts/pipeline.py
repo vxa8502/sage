@@ -26,6 +26,7 @@ from sage.config import (
     CHARS_PER_TOKEN,
     DEV_SUBSET_SIZE,
     DATA_DIR,
+    EMBEDDING_MODEL,
     get_logger,
     log_banner,
     log_section,
@@ -68,7 +69,7 @@ def run_tokenizer_validation():
     logger.info("Loaded reviews and sampled 500", extra={"total": len(df)})
     logger.info("Loading E5 tokenizer...")
 
-    tokenizer = AutoTokenizer.from_pretrained("intfloat/e5-small-v2")
+    tokenizer = AutoTokenizer.from_pretrained(EMBEDDING_MODEL)
 
     ratios = []
     for text in sample:

@@ -13,11 +13,11 @@ Aggregation strategies for chunk-to-product scoring:
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING
 
-from sage.adapters.embeddings import get_embedder
-from sage.adapters.vector_store import get_client, search
+from sage.adapters.vector_store import search
+from sage.api.metrics import observe_embedding_duration, observe_retrieval_duration
+from sage.utils import LazyServiceMixin, timed_operation
 from sage.core import (
     AggregationMethod,
     ProductScore,
@@ -54,11 +54,12 @@ DEFAULT_SIMILARITY_WEIGHT = 0.8  # alpha: weight for semantic similarity
 DEFAULT_RATING_WEIGHT = 0.2  # beta: weight for normalized rating
 
 
-class RetrievalService:
+class RetrievalService(LazyServiceMixin):
     """
     Service for retrieving and ranking product recommendations.
 
     Coordinates between embedder, vector store, and aggregation logic.
+    Uses LazyServiceMixin for on-demand embedder and client initialization.
     """
 
     def __init__(
@@ -88,20 +89,6 @@ class RetrievalService:
         self._embedder = embedder
         self._client = client
 
-    @property
-    def embedder(self):
-        """Lazy-load embedder."""
-        if self._embedder is None:
-            self._embedder = get_embedder()
-        return self._embedder
-
-    @property
-    def client(self):
-        """Lazy-load Qdrant client."""
-        if self._client is None:
-            self._client = get_client()
-        return self._client
-
     def retrieve_chunks(
         self,
         query: str,
@@ -126,23 +113,18 @@ class RetrievalService:
         limit = limit or self.candidate_limit
 
         if query_embedding is None:
-            t0 = time.perf_counter()
-            query_embedding = self.embedder.embed_single_query(query)
-            logger.info("Embedding: %.0fms", (time.perf_counter() - t0) * 1000)
+            with timed_operation("Embedding", logger, observe_embedding_duration):
+                query_embedding = self.embedder.embed_single_query(query)
 
-        t0 = time.perf_counter()
-        results = search(
-            client=self.client,
-            query_embedding=query_embedding.tolist(),
-            collection_name=self.collection_name,
-            limit=limit,
-            min_rating=min_rating,
-        )
-        logger.info(
-            "Qdrant search: %.0fms, %d results",
-            (time.perf_counter() - t0) * 1000,
-            len(results),
-        )
+        with timed_operation("Qdrant search", logger, observe_retrieval_duration):
+            results = search(
+                client=self.client,
+                query_embedding=query_embedding.tolist(),
+                collection_name=self.collection_name,
+                limit=limit,
+                min_rating=min_rating,
+            )
+        logger.info("Retrieved %d raw results", len(results))
 
         chunks = []
         for r in results:

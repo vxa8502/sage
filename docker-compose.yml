@@ -1,0 +1,66 @@
+# Sage RAG Recommendation System - Docker Compose
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in your API keys
+#   2. Run: docker-compose up
+#   3. Hit: http://localhost:8000/health
+#
+# This brings up:
+#   - Sage API (FastAPI) on port 8000
+#   - Qdrant (vector DB) on port 6333
+#
+# For Qdrant Cloud instead of local Qdrant:
+#   Set QDRANT_URL and QDRANT_API_KEY in .env
+#   Local Qdrant still starts but is unused; API connects to cloud
+
+services:
+  # ==========================================================================
+  # Sage API - FastAPI recommendation service
+  # ==========================================================================
+  sage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    env_file:
+      - .env
+    environment:
+      - PORT=${PORT:-8000}
+      # Use local Qdrant if QDRANT_URL not set in .env
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:${PORT:-8000}/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s  # Models take ~60s to load
+      retries: 3
+    restart: unless-stopped
+
+  # ==========================================================================
+  # Qdrant - Vector database for embeddings
+  # ==========================================================================
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    ports:
+      - "6333:6333"
+      - "6334:6334"  # gRPC
+    volumes:
+      # Persist vectors across container restarts
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+    driver: local

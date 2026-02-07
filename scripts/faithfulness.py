@@ -51,8 +51,7 @@ TOP_K_PRODUCTS = 3
 
 def run_evaluation(n_samples: int, run_ragas: bool = False):
     """Run faithfulness evaluation on sample queries."""
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
+    from scripts.lib.services import get_explanation_services
 
     queries = EVALUATION_QUERIES[:n_samples]
 
@@ -62,7 +61,7 @@ def run_evaluation(n_samples: int, run_ragas: bool = False):
     # Generate explanations
     log_section(logger, "1. GENERATING EXPLANATIONS")
 
-    explainer = Explainer()
+    explainer, detector = get_explanation_services()
     all_explanations = []
 
     for i, query in enumerate(queries, 1):
@@ -95,7 +94,6 @@ def run_evaluation(n_samples: int, run_ragas: bool = False):
     # Run HHEM
     log_section(logger, "2. HHEM HALLUCINATION DETECTION")
 
-    detector = HallucinationDetector()
     hhem_results = [
         detector.check_explanation(expl.evidence_texts, expl.explanation)
         for expl in all_explanations
@@ -204,13 +202,11 @@ def run_evaluation(n_samples: int, run_ragas: bool = False):
 
 def run_failure_analysis():
     """Analyze failure cases to identify root causes."""
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
+    from scripts.lib.services import get_explanation_services
 
     log_banner(logger, "FAILURE CASE ANALYSIS")
 
-    explainer = Explainer()
-    detector = HallucinationDetector()
+    explainer, detector = get_explanation_services()
 
     all_cases = []
     case_id = 0

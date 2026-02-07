@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from sage.adapters.embeddings import get_embedder
-from sage.adapters.vector_store import get_client, search
+from sage.adapters.vector_store import search
+from sage.utils import LazyServiceMixin
 from sage.core import (
     AggregationMethod,
     NewItem,
@@ -71,12 +71,13 @@ def preferences_to_query(prefs: UserPreferences) -> str:
     return query if query else DEFAULT_COLD_START_QUERY
 
 
-class ColdStartService:
+class ColdStartService(LazyServiceMixin):
     """
     Service for handling cold-start scenarios.
 
     Provides strategies for new users and new items.
     Uses composition with RetrievalService for recommendation logic.
+    Uses LazyServiceMixin for on-demand embedder and client initialization.
     """
 
     def __init__(
@@ -106,20 +107,6 @@ class ColdStartService:
             self._retrieval = RetrievalService(collection_name=self.collection_name)
         return self._retrieval
 
-    @property
-    def embedder(self):
-        """Lazy-load embedder."""
-        if self._embedder is None:
-            self._embedder = get_embedder()
-        return self._embedder
-
-    @property
-    def client(self):
-        """Lazy-load Qdrant client."""
-        if self._client is None:
-            self._client = get_client()
-        return self._client
-
     def recommend_for_new_user(
         self,
         preferences: UserPreferences | None = None,
@@ -144,7 +131,7 @@ class ColdStartService:
         elif preferences:
             search_query = preferences_to_query(preferences)
         else:
-            search_query = "highly rated excellent quality recommended"
+            search_query = DEFAULT_COLD_START_QUERY
 
         return self.retrieval.recommend(
             query=search_query,

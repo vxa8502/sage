@@ -18,19 +18,19 @@ Run from project root.
 """
 
 import argparse
-import json
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 from sage.core import AggregationMethod
+from sage.utils import save_results
 from sage.services.baselines import (
     ItemKNNBaseline,
     PopularityBaseline,
     RandomBaseline,
     load_product_embeddings_from_qdrant,
 )
-from sage.config import RESULTS_DIR, get_logger, log_banner, log_section, log_kv
+from sage.config import get_logger, log_banner, log_section, log_kv
 from sage.data import load_eval_cases, load_splits
 from sage.services.evaluation import compute_item_popularity, evaluate_recommendations
 from sage.services.retrieval import recommend
@@ -60,31 +60,6 @@ def create_recommend_fn(
         return [r.product_id for r in recs]
 
     return _recommend
-
-
-def save_results(
-    results: dict, filename: str | None = None, dataset: str | None = None
-) -> Path:
-    """Save evaluation results to JSON file.
-
-    Also writes a fixed-name "latest" file so downstream scripts (e.g.
-    summary.py) can locate the most recent run without globbing.
-    """
-    if filename is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"eval_results_{timestamp}.json"
-    filepath = RESULTS_DIR / filename
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-
-    # Write latest symlink for the summary script
-    if dataset:
-        stem = Path(dataset).stem  # e.g. "eval_loo_history"
-        latest_path = RESULTS_DIR / f"{stem}_latest.json"
-        with open(latest_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=2)
-
-    return filepath
 
 
 # ============================================================================
@@ -296,14 +271,7 @@ def run_baseline_comparison(cases, train_records, all_products, product_embeddin
     def itemknn_recommend(query: str) -> list[str]:
         return itemknn_baseline.recommend(query, top_k=10)
 
-    def rag_recommend(query: str) -> list[str]:
-        recs = recommend(
-            query=query,
-            top_k=10,
-            candidate_limit=100,
-            aggregation=AggregationMethod.MAX,
-        )
-        return [r.product_id for r in recs]
+    rag_recommend = create_recommend_fn(top_k=10, aggregation=AggregationMethod.MAX)
 
     results = {}
     methods = [
@@ -434,8 +402,9 @@ def main():
     if args.baselines:
         run_baseline_comparison(cases, train_records, all_products, item_embeddings)
 
-    # Save results
-    results_path = save_results(all_results, dataset=args.dataset)
+    # Save results (uses dataset stem as prefix for both timestamped and latest files)
+    prefix = Path(args.dataset).stem
+    results_path = save_results(all_results, prefix)
     logger.info("Results saved to: %s", results_path)
 
     log_banner(logger, "EVALUATION COMPLETE")

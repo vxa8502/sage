@@ -8,10 +8,6 @@ __pycache__/
 
 # Data (too large for git)
 data/
-*.parquet
-*.csv
-*.json
-!.env.example
 
 # IDE
 .vscode/
@@ -26,8 +22,19 @@ data/
 
 # Build
 *.egg-info/
+*.egg
 dist/
 build/
+
+# Testing & Linting
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
 
 # Personal
 home/

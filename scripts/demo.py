@@ -17,8 +17,6 @@ import json
 
 from sage.core import AggregationMethod
 from sage.config import FAITHFULNESS_TARGET, get_logger, log_banner, log_section
-from sage.services.explanation import Explainer
-from sage.adapters.hhem import HallucinationDetector
 from sage.services.retrieval import get_candidates
 
 logger = get_logger(__name__)
@@ -45,9 +43,10 @@ def demo_recommendation(query: str, top_k: int = 3, max_evidence: int = 3):
         logger.warning("No products found matching query")
         return None
 
-    # Initialize explainer and detector
-    explainer = Explainer()
-    detector = HallucinationDetector()
+    # Initialize services
+    from scripts.lib.services import get_explanation_services
+
+    explainer, detector = get_explanation_services()
 
     results = []
 

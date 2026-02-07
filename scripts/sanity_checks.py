@@ -17,14 +17,16 @@ Usage:
 Run from project root.
 """
 
+from __future__ import annotations
+
 import argparse
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from sage.core import AggregationMethod, ProductScore, RetrievedChunk
 from sage.config import (
-    DATA_DIR,
     EVALUATION_QUERIES,
     get_logger,
     log_banner,
@@ -32,10 +34,11 @@ from sage.config import (
 )
 from sage.services.retrieval import get_candidates
 
-logger = get_logger(__name__)
+if TYPE_CHECKING:
+    from sage.adapters.hhem import HallucinationDetector
+    from sage.services.explanation import Explainer
 
-RESULTS_DIR = DATA_DIR / "eval_results"
-RESULTS_DIR.mkdir(exist_ok=True)
+logger = get_logger(__name__)
 
 
 # ============================================================================
@@ -43,15 +46,9 @@ RESULTS_DIR.mkdir(exist_ok=True)
 # ============================================================================
 
 
-def run_spot_check():
+def run_spot_check(explainer: Explainer, detector: HallucinationDetector):
     """Manual spot-check of explanations vs evidence."""
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
-
     log_banner(logger, "SPOT-CHECK: Manual Inspection", width=70)
-
-    explainer = Explainer()
-    detector = HallucinationDetector()
 
     results = []
     queries = EVALUATION_QUERIES[:5]
@@ -94,15 +91,9 @@ def run_spot_check():
 # ============================================================================
 
 
-def run_adversarial_tests():
+def run_adversarial_tests(explainer: Explainer, detector: HallucinationDetector):
     """Test with contradictory evidence."""
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
-
     log_banner(logger, "ADVERSARIAL: Contradictory Evidence", width=70)
-
-    explainer = Explainer()
-    detector = HallucinationDetector()
 
     cases = [
         {
@@ -169,15 +160,9 @@ def run_adversarial_tests():
 # ============================================================================
 
 
-def run_empty_context_tests():
+def run_empty_context_tests(explainer: Explainer, detector: HallucinationDetector):
     """Test graceful refusal with irrelevant evidence."""
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
-
     log_banner(logger, "EMPTY CONTEXT: Graceful Refusal", width=70)
-
-    explainer = Explainer()
-    detector = HallucinationDetector()
 
     cases = [
         {
@@ -250,15 +235,9 @@ class CalibrationSample:
     hhem_score: float
 
 
-def run_calibration_check():
+def run_calibration_check(explainer: Explainer, detector: HallucinationDetector):
     """Analyze confidence vs faithfulness correlation."""
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
-
     log_banner(logger, "CALIBRATION: Confidence vs Faithfulness", width=70)
-
-    explainer = Explainer()
-    detector = HallucinationDetector()
 
     samples = []
     queries = EVALUATION_QUERIES[:15]
@@ -330,6 +309,9 @@ def run_calibration_check():
 
 
 def main():
+    from sage.adapters.hhem import HallucinationDetector
+    from sage.services.explanation import Explainer
+
     parser = argparse.ArgumentParser(description="Run pipeline sanity checks")
     parser.add_argument(
         "--section",
@@ -340,14 +322,18 @@ def main():
     )
     args = parser.parse_args()
 
+    # Initialize services once
+    explainer = Explainer()
+    detector = HallucinationDetector()
+
     if args.section in ("all", "spot"):
-        run_spot_check()
+        run_spot_check(explainer, detector)
     if args.section in ("all", "adversarial"):
-        run_adversarial_tests()
+        run_adversarial_tests(explainer, detector)
     if args.section in ("all", "empty"):
-        run_empty_context_tests()
+        run_empty_context_tests(explainer, detector)
     if args.section in ("all", "calibration"):
-        run_calibration_check()
+        run_calibration_check(explainer, detector)
 
     log_banner(logger, "SANITY CHECKS COMPLETE", width=70)
 

@@ -20,7 +20,7 @@ from sage.api.app import create_app
 from sage.config import configure_logging
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Sage API server")
     parser.add_argument("--host", default="0.0.0.0", help="Bind address")
     parser.add_argument(

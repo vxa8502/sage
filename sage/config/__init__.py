@@ -21,9 +21,6 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-EXPLANATIONS_DIR = DATA_DIR / "explanations"
-EXPLANATIONS_DIR.mkdir(exist_ok=True)
-
 RESULTS_DIR = DATA_DIR / "eval_results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
@@ -89,7 +86,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # LLM Settings
 # ---------------------------------------------------------------------------
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")  # "anthropic" or "openai"
+# Provider constants
+PROVIDER_ANTHROPIC = "anthropic"
+PROVIDER_OPENAI = "openai"
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", PROVIDER_ANTHROPIC)
 
 # Model selection
 ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
@@ -193,7 +194,6 @@ __all__ = [
     # Paths
     "PROJECT_ROOT",
     "DATA_DIR",
-    "EXPLANATIONS_DIR",
     "RESULTS_DIR",
     # Dataset
     "DATASET_NAME",
@@ -220,6 +220,8 @@ __all__ = [
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
     # LLM
+    "PROVIDER_ANTHROPIC",
+    "PROVIDER_OPENAI",
     "LLM_PROVIDER",
     "ANTHROPIC_MODEL",
     "OPENAI_MODEL",

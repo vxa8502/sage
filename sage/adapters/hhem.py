@@ -20,9 +20,10 @@ Limitations:
 - Safe evidence budget: ~400 tokens (~3 chunks at 100 tokens each).
 """
 
-import threading
+import time
 import warnings
 
+from sage.api.metrics import observe_hhem_duration
 from sage.core import (
     ClaimResult,
     HallucinationResult,
@@ -33,6 +34,7 @@ from sage.config import (
     HHEM_MODEL,
     get_logger,
 )
+from sage.utils import require_import, thread_safe_singleton
 
 logger = get_logger(__name__)
 
@@ -67,16 +69,17 @@ class HallucinationDetector:
         Raises:
             ImportError: If required packages are not installed.
         """
-        try:
-            import torch
-            from huggingface_hub import hf_hub_download
-            from safetensors.torch import load_file
-            from transformers import AutoConfig, AutoTokenizer, T5ForTokenClassification
-        except ImportError as e:
-            raise ImportError(
-                f"Required packages missing: {e}. "
-                "Install with: pip install transformers huggingface_hub safetensors"
-            )
+        # Import required packages
+        torch = require_import("torch")
+        hf_hub = require_import("huggingface_hub")
+        safetensors_torch = require_import("safetensors.torch", pip_name="safetensors")
+        transformers = require_import("transformers")
+
+        hf_hub_download = hf_hub.hf_hub_download
+        load_file = safetensors_torch.load_file
+        AutoConfig = transformers.AutoConfig
+        AutoTokenizer = transformers.AutoTokenizer
+        T5ForTokenClassification = transformers.T5ForTokenClassification
 
         self.threshold = threshold
         self.device = device
@@ -232,8 +235,11 @@ class HallucinationDetector:
         Returns:
             HallucinationResult with score and hallucination flag.
         """
+        t0 = time.perf_counter()
         premise = self._format_premise(evidence_texts, hypothesis=explanation)
         scores = self._predict([(premise, explanation)])
+        hhem_duration = time.perf_counter() - t0
+        observe_hhem_duration(hhem_duration)
         return self._make_result(scores[0], explanation, len(premise))
 
     def check_claims(
@@ -297,19 +303,10 @@ class HallucinationDetector:
         ]
 
 
-# Module-level singleton
-_detector: HallucinationDetector | None = None
-_detector_lock = threading.Lock()
-
-
+@thread_safe_singleton
 def get_detector() -> HallucinationDetector:
     """Get or create the global hallucination detector (thread-safe singleton)."""
-    global _detector
-    if _detector is None:
-        with _detector_lock:
-            if _detector is None:
-                _detector = HallucinationDetector()
-    return _detector
+    return HallucinationDetector()
 
 
 def check_hallucination(

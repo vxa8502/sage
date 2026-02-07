@@ -313,3 +313,201 @@ print(
 )
 print(f"Data quality issues: {empty_reviews + very_short + duplicate_texts}")
 print(f"\nPlots saved to: {FIGURES_DIR}")
+
+# %% Generate markdown report
+from pathlib import Path
+
+REPORTS_DIR = Path("reports")
+REPORTS_DIR.mkdir(exist_ok=True)
+
+# Compute all stats for report
+raw_total = len(df)
+prepared_total = len(df_prepared)
+unique_users_raw = df["user_id"].nunique()
+unique_items_raw = df["parent_asin"].nunique()
+unique_users_prepared = prepared_stats["unique_users"]
+unique_items_prepared = prepared_stats["unique_items"]
+avg_rating_raw = stats["avg_rating"]
+avg_rating_prepared = prepared_stats["avg_rating"]
+retention_pct = prepared_total / raw_total * 100
+
+median_chars = df["text_length"].median()
+mean_chars = df["text_length"].mean()
+median_tokens = df["estimated_tokens"].median()
+chunking_pct = needs_chunking / len(df) * 100
+
+five_star_pct = rating_counts.get(5, 0) / len(df) * 100
+one_star_pct = rating_counts.get(1, 0) / len(df) * 100
+middle_pct = 100 - five_star_pct - one_star_pct
+
+users_one_review = (user_counts == 1).sum()
+users_one_review_pct = users_one_review / len(user_counts) * 100
+users_5plus = (user_counts >= 5).sum()
+max_user_reviews = user_counts.max()
+
+items_one_review = (item_counts == 1).sum()
+items_one_review_pct = items_one_review / len(item_counts) * 100
+items_5plus = (item_counts >= 5).sum()
+max_item_reviews = item_counts.max()
+
+length_1star = length_by_rating.get(1, 0)
+length_2star = length_by_rating.get(2, 0)
+length_3star = length_by_rating.get(3, 0)
+length_4star = length_by_rating.get(4, 0)
+length_5star = length_by_rating.get(5, 0)
+
+report_content = f"""# Exploratory Data Analysis: Amazon Electronics Reviews
+
+**Dataset:** McAuley-Lab/Amazon-Reviews-2023 (Electronics category)
+**Subset:** {raw_total:,} raw reviews -> {prepared_total:,} after 5-core filtering
+
+---
+
+## Dataset Overview
+
+The Amazon Electronics reviews dataset provides rich user feedback data for building recommendation systems. After standard preprocessing and 5-core filtering (requiring users and items to have at least 5 interactions), the dataset exhibits the characteristic sparsity of real-world recommendation scenarios.
+
+| Metric | Raw | After 5-Core |
+|--------|-----|--------------|
+| Total Reviews | {raw_total:,} | {prepared_total:,} |
+| Unique Users | {unique_users_raw:,} | {unique_users_prepared:,} |
+| Unique Items | {unique_items_raw:,} | {unique_items_prepared:,} |
+| Avg Rating | {avg_rating_raw:.2f} | {avg_rating_prepared:.2f} |
+| Retention | - | {retention_pct:.1f}% |
+
+---
+
+## Rating Distribution
+
+Amazon reviews exhibit a well-known J-shaped distribution, heavily skewed toward 5-star ratings. This reflects both genuine satisfaction and selection bias (dissatisfied customers often don't leave reviews).
+
+![Rating Distribution](../data/figures/rating_distribution.png)
+
+**Key Observations:**
+- 5-star ratings dominate ({five_star_pct:.1f}% of reviews)
+- 1-star reviews form the second largest group ({one_star_pct:.1f}%)
+- Middle ratings (2-4 stars) are relatively rare ({middle_pct:.1f}% combined)
+- This polarization is typical for e-commerce review data
+
+**Implications for Modeling:**
+- Binary classification (positive/negative) may be more robust than regression
+- Rating-weighted aggregation should account for the skewed distribution
+- Evidence from 4-5 star reviews carries stronger positive signal
+
+---
+
+## Review Length Analysis
+
+Review length varies significantly and correlates with the chunking strategy for the RAG pipeline. Most reviews are short enough to embed directly without chunking.
+
+![Review Length Distribution](../data/figures/review_lengths.png)
+
+**Length Statistics:**
+- Median: {median_chars:.0f} characters (~{median_tokens:.0f} tokens)
+- Mean: {mean_chars:.0f} characters (~{mean_chars / 4:.0f} tokens)
+- Reviews exceeding 200 tokens: {chunking_pct:.1f}% (require chunking)
+
+**Chunking Strategy Validation:**
+The tiered chunking approach is well-suited to this distribution:
+- **Short (<200 tokens):** No chunking needed - majority of reviews
+- **Medium (200-500 tokens):** Semantic chunking at topic boundaries
+- **Long (>500 tokens):** Semantic + sliding window fallback
+
+---
+
+## Review Length by Rating
+
+Negative reviews tend to be longer than positive ones. Users who are dissatisfied often provide detailed explanations of issues, while satisfied users may simply express approval.
+
+![Review Length by Rating](../data/figures/length_by_rating.png)
+
+**Pattern:**
+- 1-star reviews: {length_1star:.0f} chars median
+- 2-3 star reviews: {length_2star:.0f}-{length_3star:.0f} chars median (users explain nuance)
+- 4-star reviews: {length_4star:.0f} chars median
+- 5-star reviews: {length_5star:.0f} chars median
+
+**Implications:**
+- Negative reviews provide richer evidence for issue identification
+- Positive reviews may require multiple chunks for substantive explanations
+- Rating filters (min_rating=4) naturally bias toward shorter evidence
+
+---
+
+## Temporal Distribution
+
+The dataset spans multiple years of reviews, enabling proper temporal train/validation/test splits that prevent data leakage.
+
+![Reviews Over Time](../data/figures/reviews_over_time.png)
+
+**Temporal Split Strategy:**
+- **Train (70%):** Oldest reviews - model learns from historical patterns
+- **Validation (10%):** Middle period - hyperparameter tuning
+- **Test (20%):** Most recent - simulates production deployment
+
+This chronological ordering ensures the model never sees "future" data during training.
+
+---
+
+## User and Item Activity
+
+The long-tail distribution is pronounced: most users write few reviews, and most items receive few reviews. This sparsity is the fundamental challenge recommendation systems address.
+
+![User and Item Distribution](../data/figures/user_item_distribution.png)
+
+**User Activity:**
+- Users with only 1 review: {users_one_review_pct:.1f}%
+- Users with 5+ reviews: {users_5plus:,}
+- Power user max: {max_user_reviews} reviews
+
+**Item Popularity:**
+- Items with only 1 review: {items_one_review_pct:.1f}%
+- Items with 5+ reviews: {items_5plus:,}
+- Most reviewed item: {max_item_reviews} reviews
+
+**Cold-Start Implications:**
+- Many items have sparse evidence - content-based features are critical
+- User cold-start is common - onboarding preferences help
+- 5-core filtering ensures minimum evidence density for evaluation
+
+---
+
+## Data Quality Assessment
+
+The raw dataset contains several quality issues addressed during preprocessing.
+
+| Issue | Count | Resolution |
+|-------|-------|------------|
+| Missing text | 0 | - |
+| Empty reviews | {empty_reviews} | Removed |
+| Very short (<10 chars) | {very_short:,} | Removed |
+| Duplicate texts | {duplicate_texts:,} | Kept (valid re-purchases) |
+| Invalid ratings | 0 | - |
+
+**Post-Cleaning:**
+- All reviews have valid text content
+- All ratings are in [1, 5] range
+- All user/product identifiers present
+
+---
+
+## Summary
+
+The Amazon Electronics dataset, after 5-core filtering and cleaning, provides a solid foundation for building and evaluating a RAG-based recommendation system:
+
+1. **Scale:** {prepared_total:,} reviews across {unique_users_prepared:,} users and {unique_items_prepared:,} items
+2. **Sparsity:** {100 - retention_pct:.1f}% filtered - realistic for recommendation evaluation
+3. **Quality:** Clean text, valid ratings, proper identifiers
+4. **Temporal:** Supports chronological train/val/test splits
+5. **Content:** Review lengths suit the tiered chunking strategy
+
+The J-shaped rating distribution and long-tail user/item activity are characteristic of real e-commerce data, making this an appropriate benchmark for portfolio demonstration.
+
+---
+
+*Report auto-generated by `scripts/eda.py`. Run `make eda` to regenerate.*
+"""
+
+report_path = REPORTS_DIR / "eda_report.md"
+report_path.write_text(report_content)
+print(f"\nReport generated: {report_path}")

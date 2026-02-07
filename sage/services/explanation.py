@@ -5,10 +5,10 @@ Orchestrates LLM-based explanation generation with evidence quality gates
 and post-generation verification.
 """
 
-import time
-
 from sage.adapters.llm import LLMClient, get_llm_client
+from sage.api.metrics import observe_llm_duration
 from sage.config import get_logger
+from sage.utils import extract_evidence, timed_operation
 from sage.core import (
     CitationVerificationResult,
     EvidenceQuality,
@@ -67,13 +67,13 @@ def _build_refusal_result(
 ) -> ExplanationResult:
     """Build an ExplanationResult for a quality gate refusal."""
     refusal = generate_refusal_message(query, quality)
-    chunks_used = product.evidence[:max_evidence]
+    evidence_texts, evidence_ids = extract_evidence(product.evidence, max_evidence)
     return ExplanationResult(
         explanation=refusal,
         product_id=product.product_id,
         query=query,
-        evidence_texts=[c.text for c in chunks_used],
-        evidence_ids=[c.review_id for c in chunks_used],
+        evidence_texts=evidence_texts,
+        evidence_ids=evidence_ids,
         tokens_used=0,
         model="quality_gate_refusal",
     )
@@ -113,17 +113,12 @@ class Explainer:
             build_explanation_prompt(query, product, max_evidence)
         )
 
-        t0 = time.perf_counter()
-        explanation, tokens = self.client.generate(
-            system=system_prompt,
-            user=user_prompt,
-        )
-        logger.info(
-            "LLM generation for %s: %.0fms, %d tokens",
-            product.product_id,
-            (time.perf_counter() - t0) * 1000,
-            tokens,
-        )
+        with timed_operation("LLM generation", logger, observe_llm_duration):
+            explanation, tokens = self.client.generate(
+                system=system_prompt,
+                user=user_prompt,
+            )
+        logger.info("Generated for %s: %d tokens", product.product_id, tokens)
 
         return explanation, tokens, evidence_texts, evidence_ids, user_prompt
 

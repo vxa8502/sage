@@ -6,6 +6,7 @@ venv/
 data/
 home/
 scripts/
+tests/
 *.parquet
 *.npy
 __pycache__/

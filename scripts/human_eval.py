@@ -100,11 +100,12 @@ def _select_config_queries(exclude: set[str], target: int = 15) -> list[str]:
     return selected
 
 
-def generate_samples(force: bool = False):
+def generate_samples(force: bool = False, seed: int = 42):
     """Generate recommendation+explanation samples for human evaluation."""
+    import random
+
     from sage.services.retrieval import get_candidates
-    from sage.services.explanation import Explainer
-    from sage.adapters.hhem import HallucinationDetector
+    from scripts.lib.services import get_explanation_services
 
     # Protect existing rated samples from accidental overwrite
     if SAMPLES_FILE.exists() and not force:
@@ -124,11 +125,18 @@ def generate_samples(force: bool = False):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     log_banner(logger, "GENERATING HUMAN EVAL SAMPLES")
+    logger.info("Random seed: %d", seed)
+
+    # Set seed for reproducibility
+    random.seed(seed)
 
     # Select diverse query set
     natural = _select_diverse_natural_queries(35)
     config = _select_config_queries(set(natural), 15)
     all_queries = natural + config
+
+    # Shuffle with seeded random for reproducibility
+    random.shuffle(all_queries)
     logger.info(
         "Queries: %d natural + %d config = %d total",
         len(natural),
@@ -146,8 +154,7 @@ def generate_samples(force: bool = False):
         )
 
     # Initialize services
-    explainer = Explainer()
-    detector = HallucinationDetector()
+    explainer, detector = get_explanation_services()
 
     samples = []
     for i, query in enumerate(all_queries, 1):
@@ -496,13 +503,22 @@ def main():
         action="store_true",
         help="Overwrite existing rated samples (with --generate)",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for query selection (with --generate)",
+    )
     args = parser.parse_args()
 
     if args.force and not args.generate:
         parser.error("--force can only be used with --generate")
 
+    if args.seed != 42 and not args.generate:
+        parser.error("--seed can only be used with --generate")
+
     if args.generate:
-        generate_samples(force=args.force)
+        generate_samples(force=args.force, seed=args.seed)
     elif args.annotate:
         annotate_samples()
     elif args.analyze:

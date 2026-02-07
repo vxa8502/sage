@@ -3,6 +3,52 @@ Semantic query cache with exact-match (L1) and embedding-similarity (L2) layers.
 
 Provides sub-millisecond cache hits for repeated queries and ~50ms hits for
 semantically equivalent queries, avoiding redundant retrieval + LLM calls.
+
+Architecture (cache sits BETWEEN user and vector DB):
+
+    User Query
+        │
+        ▼
+    ┌─────────────────┐
+    │  L1: Exact Match │ ─── hit ──▶ Return cached response (<1ms)
+    │  (query string)  │
+    └────────┬────────┘
+             │ miss
+             ▼
+    ┌─────────────────┐
+    │ L2: Semantic    │ ─── hit ──▶ Return cached response (~50ms)
+    │ (embedding sim) │
+    └────────┬────────┘
+             │ miss
+             ▼
+    ┌─────────────────┐
+    │ Vector DB Query │
+    │   (Qdrant)      │
+    └────────┬────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │ LLM Explanation │
+    │   (OpenAI)      │
+    └────────┬────────┘
+             │
+             ▼
+    Store in cache ──▶ Return response
+
+TTL Policy (unified at 1 hour):
+    We use a single 3600s TTL rather than separate L1/L2 TTLs because:
+    1. Product reviews don't change frequently (static corpus)
+    2. LLM explanations are deterministic given same evidence
+    3. Simpler cache invalidation (one knob to tune)
+    4. In production, we'd tie TTL to data refresh cadence
+
+Similarity Threshold (0.92):
+    Chosen based on empirical testing:
+    - 0.85: Too permissive, returns irrelevant cached results
+    - 0.90: Some false positives on short queries
+    - 0.92: Good balance — catches "headphones" ≈ "best headphones"
+    - 0.95: Too strict, misses obvious paraphrases
+    The threshold is configurable via CACHE_SIMILARITY_THRESHOLD env var.
 """
 
 import copy
@@ -12,7 +58,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from sage.core.verification import normalize_text
+from sage.utils import normalize_text, normalize_vectors
 from sage.config import (
     CACHE_MAX_ENTRIES,
     CACHE_SIMILARITY_THRESHOLD,
@@ -79,14 +125,10 @@ class CacheStats:
 class SemanticCache:
     """Thread-safe in-memory cache with exact-match and semantic-similarity layers.
 
-    Parameters
-    ----------
-    similarity_threshold : float
-        Minimum cosine similarity for a semantic cache hit (0.0-1.0).
-    max_entries : int
-        Maximum cached entries before LRU eviction.
-    ttl_seconds : float
-        Time-to-live in seconds. Entries older than this are evicted on access.
+    Args:
+        similarity_threshold: Minimum cosine similarity for a semantic cache hit (0.0-1.0).
+        max_entries: Maximum cached entries before LRU eviction.
+        ttl_seconds: Time-to-live in seconds. Entries older than this are evicted on access.
     """
 
     def __init__(
@@ -125,19 +167,14 @@ class SemanticCache:
     ) -> tuple[dict | None, str]:
         """Look up a cached result.
 
-        Parameters
-        ----------
-        query : str
-            The user query.
-        query_embedding : np.ndarray, optional
-            Pre-computed embedding for semantic matching. If None, only exact
-            match is attempted.
+        Args:
+            query: The user query.
+            query_embedding: Pre-computed embedding for semantic matching.
+                If None, only exact match is attempted.
 
-        Returns
-        -------
-        tuple[dict | None, str]
-            (cached_result, hit_type) where hit_type is "exact", "semantic",
-            or "miss".
+        Returns:
+            Tuple of (cached_result, hit_type) where hit_type is "exact",
+            "semantic", or "miss".
         """
         key = normalize_text(query)
         now = time.monotonic()
@@ -151,6 +188,11 @@ class SemanticCache:
                 entry.last_accessed = now
                 entry.hit_count += 1
                 self._exact_hits += 1
+                logger.info(
+                    "Cache L1 HIT (exact): query=%r, hits=%d",
+                    query[:50],
+                    entry.hit_count,
+                )
                 return copy.deepcopy(entry.result), "exact"
 
             # L2: semantic similarity
@@ -161,22 +203,27 @@ class SemanticCache:
                     best_entry.hit_count += 1
                     self._semantic_hits += 1
                     self._semantic_similarity_sum += best_sim
+                    logger.info(
+                        "Cache L2 HIT (semantic): query=%r, matched=%r, sim=%.3f",
+                        query[:50],
+                        best_entry.key[:50],
+                        best_sim,
+                    )
                     return copy.deepcopy(best_entry.result), "semantic"
 
             self._misses += 1
+            logger.info(
+                "Cache MISS: query=%r, cache_size=%d", query[:50], len(self._entries)
+            )
             return None, "miss"
 
     def put(self, query: str, query_embedding: np.ndarray, result: dict) -> None:
         """Store a result in the cache.
 
-        Parameters
-        ----------
-        query : str
-            The user query.
-        query_embedding : np.ndarray
-            The query embedding vector.
-        result : dict
-            The serializable result to cache.
+        Args:
+            query: The user query.
+            query_embedding: The query embedding vector.
+            result: The serializable result to cache.
         """
         key = normalize_text(query)
         now = time.monotonic()
@@ -204,6 +251,12 @@ class SemanticCache:
             )
             self._exact[key] = entry
             self._entries.append(entry)
+            logger.info(
+                "Cache PUT: query=%r, cache_size=%d/%d",
+                query[:50],
+                len(self._entries),
+                self._max_entries,
+            )
 
     def stats(self) -> CacheStats:
         """Return a snapshot of cache statistics."""
@@ -245,15 +298,18 @@ class SemanticCache:
         Must be called while holding self._lock and with len(self._entries) > 0.
         """
         cached_embeddings = np.array([e.embedding for e in self._entries])
-        query_norm = query_embedding / (np.linalg.norm(query_embedding) + 1e-10)
-        norms = np.linalg.norm(cached_embeddings, axis=1, keepdims=True) + 1e-10
-        cached_normed = cached_embeddings / norms
+        query_norm = normalize_vectors(query_embedding)
+        cached_normed = normalize_vectors(cached_embeddings)
         similarities = cached_normed @ query_norm
         best_idx = int(np.argmax(similarities))
         return self._entries[best_idx], float(similarities[best_idx])
 
     def _remove_entry(self, entry: _CacheEntry) -> None:
-        """Remove an entry from both indexes. Must be called while holding self._lock."""
+        """Remove an entry from both indexes. Must be called while holding self._lock.
+
+        Note: Uses O(n) list.remove() which is acceptable for max_entries <= 1000.
+        For larger caches, consider a heap or ordered dict structure.
+        """
         self._exact.pop(entry.key, None)
         self._entries.remove(entry)
         self._evictions += 1

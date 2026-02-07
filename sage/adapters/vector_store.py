@@ -20,6 +20,7 @@ from sage.config import (
     QDRANT_URL,
     get_logger,
 )
+from sage.utils import require_import
 
 logger = get_logger(__name__)
 
@@ -44,12 +45,8 @@ def get_client():
     Raises:
         ImportError: If qdrant-client is not installed.
     """
-    try:
-        from qdrant_client import QdrantClient
-    except ImportError:
-        raise ImportError(
-            "qdrant-client package required. Install with: pip install qdrant-client"
-        )
+    qdrant = require_import("qdrant_client", pip_name="qdrant-client")
+    QdrantClient = qdrant.QdrantClient
 
     if QDRANT_API_KEY:
         return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)

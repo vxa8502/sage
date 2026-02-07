@@ -11,6 +11,7 @@ Prompt design rationale:
 """
 
 from sage.core.models import ProductScore, RetrievedChunk
+from sage.utils import extract_evidence
 
 
 EXPLANATION_SYSTEM_PROMPT = """You explain product recommendations using ONLY direct quotes from customer reviews.
@@ -97,9 +98,7 @@ def build_explanation_prompt(
     Returns:
         Tuple of (system_prompt, user_prompt, evidence_texts, evidence_ids).
     """
-    chunks_used = product.evidence[:max_evidence]
-    evidence_texts = [c.text for c in chunks_used]
-    evidence_ids = [c.review_id for c in chunks_used]
+    evidence_texts, evidence_ids = extract_evidence(product.evidence, max_evidence)
     evidence_formatted = format_evidence(product.evidence, max_evidence)
 
     valid_ids = ", ".join(evidence_ids)

@@ -4,6 +4,10 @@ FastAPI application factory.
 Creates the app with lifespan-managed singletons (embedder, Qdrant client,
 HHEM detector, LLM explainer, semantic cache) so heavy models are loaded
 once at startup and shared across requests.
+
+Graceful shutdown:
+- On SIGTERM, waits for active requests to complete (up to 30s)
+- New requests during shutdown return 503 with Retry-After header
 """
 
 from __future__ import annotations
@@ -14,19 +18,36 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
-from sage.api.middleware import LatencyMiddleware
+from sage.api.middleware import (
+    LatencyMiddleware,
+    get_shutdown_coordinator,
+    reset_shutdown_coordinator,
+)
 from sage.api.routes import router
 from sage.config import get_logger
 
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",")]
+
+# Graceful shutdown timeout (seconds to wait for active requests)
+SHUTDOWN_TIMEOUT = float(os.getenv("SHUTDOWN_TIMEOUT", "30.0"))
 
 logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """Initialize shared resources at startup, release at shutdown."""
+    """Initialize shared resources at startup, release at shutdown.
+
+    Shutdown sequence:
+    1. Signal shutdown coordinator (new requests get 503)
+    2. Wait for active requests to complete (up to SHUTDOWN_TIMEOUT)
+    3. Release resources
+    """
     logger.info("Starting Sage API...")
+
+    # Reset shutdown coordinator for this app instance
+    reset_shutdown_coordinator()
+    coordinator = get_shutdown_coordinator()
 
     # Validate LLM credentials early
     from sage.config import ANTHROPIC_API_KEY, LLM_PROVIDER, OPENAI_API_KEY
@@ -92,7 +113,16 @@ async def _lifespan(app: FastAPI):
 
     logger.info("Sage API ready")
     yield
-    logger.info("Sage API shutting down")
+
+    # Graceful shutdown: wait for active requests to complete
+    logger.info("Sage API shutting down...")
+    completed = await coordinator.wait_for_shutdown(timeout=SHUTDOWN_TIMEOUT)
+    if not completed:
+        logger.warning(
+            "Forced shutdown with %d requests still active",
+            coordinator.active_requests,
+        )
+    logger.info("Sage API shutdown complete")
 
 
 def create_app() -> FastAPI:
