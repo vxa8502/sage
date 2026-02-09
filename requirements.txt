@@ -44,7 +44,7 @@ joblib==1.4.2
 MarkupSafe==3.0.2
 packaging==24.2
 pillow==11.1.0
-portalocker==3.0.0
+portalocker==2.10.1
 PyYAML==6.0.2
 regex==2024.11.6
 requests==2.32.3
