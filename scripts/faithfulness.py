@@ -51,7 +51,7 @@ TOP_K_PRODUCTS = 3
 
 def run_evaluation(n_samples: int, run_ragas: bool = False):
     """Run faithfulness evaluation on sample queries."""
-    from scripts.lib.services import get_explanation_services
+    from sage.services import get_explanation_services
 
     queries = EVALUATION_QUERIES[:n_samples]
 
@@ -202,7 +202,7 @@ def run_evaluation(n_samples: int, run_ragas: bool = False):
 
 def run_failure_analysis():
     """Analyze failure cases to identify root causes."""
-    from scripts.lib.services import get_explanation_services
+    from sage.services import get_explanation_services
 
     log_banner(logger, "FAILURE CASE ANALYSIS")
 

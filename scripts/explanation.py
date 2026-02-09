@@ -43,7 +43,7 @@ PRODUCTS_PER_QUERY = 2
 
 def run_basic_tests():
     """Test basic explanation generation and HHEM detection."""
-    from scripts.lib.services import get_explanation_services
+    from sage.services import get_explanation_services
 
     log_banner(logger, "BASIC EXPLANATION TESTS")
     logger.info("Using LLM provider: %s", LLM_PROVIDER)
@@ -105,15 +105,18 @@ def run_basic_tests():
         logger.info('Query: "%s"', test_query)
         logger.info("Streaming: ")
 
-        stream = explainer.generate_explanation_stream(test_query, test_product)
-        chunks = list(stream)
-        logger.info("".join(chunks))
+        try:
+            stream = explainer.generate_explanation_stream(test_query, test_product)
+            chunks = list(stream)
+            logger.info("".join(chunks))
 
-        streamed_result = stream.get_complete_result()
-        hhem = detector.check_explanation(
-            streamed_result.evidence_texts, streamed_result.explanation
-        )
-        logger.info("HHEM Score: %.3f", hhem.score)
+            streamed_result = stream.get_complete_result()
+            hhem = detector.check_explanation(
+                streamed_result.evidence_texts, streamed_result.explanation
+            )
+            logger.info("HHEM Score: %.3f", hhem.score)
+        except ValueError as e:
+            logger.info("Quality gate refused streaming: %s", e)
 
     log_banner(logger, "BASIC TESTS COMPLETE")
 
@@ -273,17 +276,20 @@ def run_cold_start_tests():
     )
     from sage.core import UserPreferences
     from sage.services.cold_start import preferences_to_query
-    from sage.data import load_splits
 
     log_banner(logger, "COLD-START HANDLING TESTS")
 
-    # Load data
-    logger.info("Loading data...")
-    train_df, val_df, test_df = load_splits()
+    # Try to load splits for warm user tests (optional)
+    train_df = None
+    user_counts = {}
+    try:
+        from sage.data import load_splits
 
-    user_counts = train_df.groupby("user_id").size().to_dict()
-
-    logger.info("Training users: %d", len(user_counts))
+        train_df, _, _ = load_splits()
+        user_counts = train_df.groupby("user_id").size().to_dict()
+        logger.info("Loaded splits: %d training users", len(user_counts))
+    except FileNotFoundError:
+        logger.info("Splits not available - warm user tests will be skipped")
 
     # Test warmup levels
     log_section(logger, "1. WARMUP LEVEL DETECTION")
@@ -347,20 +353,23 @@ def run_cold_start_tests():
     for r in recs:
         logger.info("  %s: score=%.3f", r.product_id, r.score)
 
-    # Find a warm user
-    warm_users = [u for u, c in user_counts.items() if c >= 5]
-    if warm_users:
-        warm_user = warm_users[0]
-        user_history = train_df[train_df["user_id"] == warm_user].to_dict("records")
+    # Find a warm user (only if splits available)
+    if train_df is not None:
+        warm_users = [u for u, c in user_counts.items() if c >= 5]
+        if warm_users:
+            warm_user = warm_users[0]
+            user_history = train_df[train_df["user_id"] == warm_user].to_dict("records")
 
-        logger.info("Warm user (%d interactions):", len(user_history))
-        recs = hybrid_recommend(
-            query="similar products",
-            user_history=user_history,
-            top_k=3,
-        )
-        for r in recs:
-            logger.info("  %s: score=%.3f", r.product_id, r.score)
+            logger.info("Warm user (%d interactions):", len(user_history))
+            recs = hybrid_recommend(
+                query="similar products",
+                user_history=user_history,
+                top_k=3,
+            )
+            for r in recs:
+                logger.info("  %s: score=%.3f", r.product_id, r.score)
+    else:
+        logger.info("Skipping warm user test (no splits)")
 
     log_banner(logger, "COLD-START TESTS COMPLETE")
 

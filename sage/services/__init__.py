@@ -31,6 +31,21 @@ from sage.services.cold_start import (
     recommend_cold_start_user,
 )
 
+
+def get_explanation_services():
+    """Initialize Explainer and HallucinationDetector.
+
+    Centralizes the common pattern of creating both services together.
+    Import is deferred to avoid loading heavy models until needed.
+
+    Returns:
+        Tuple of (Explainer, HallucinationDetector) instances.
+    """
+    from sage.adapters.hhem import HallucinationDetector
+
+    return Explainer(), HallucinationDetector()
+
+
 # Evaluation and faithfulness services are loaded lazily to avoid
 # pulling in ragas/langchain when only retrieval is needed.
 # Import from sage.services.evaluation or sage.services.faithfulness directly.
@@ -75,6 +90,7 @@ __all__ = [
     # Explanation
     "Explainer",
     "explain_recommendations",
+    "get_explanation_services",
     # Cold-start
     "ColdStartService",
     "recommend_cold_start_user",

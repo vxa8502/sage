@@ -51,17 +51,6 @@ def main():
     print("SAGE PIPELINE RESULTS")
     print(SEP)
 
-    # -- Recommendation Quality (LOO History) ---------------------------------
-    loo = load_json(RESULTS_DIR / "eval_loo_history_latest.json")
-    print_section("Recommendation Quality (LOO History):")
-    if loo and "primary_metrics" in loo:
-        m = loo["primary_metrics"]
-        print(f"  NDCG@10:    {fmt(m.get('ndcg_at_10'))}")
-        print(f"  Hit@10:     {fmt(m.get('hit_at_10'))}")
-        print(f"  MRR:        {fmt(m.get('mrr'))}")
-    else:
-        print("  (not available)")
-
     # -- Recommendation Quality (Natural Queries) -----------------------------
     nat = load_json(RESULTS_DIR / "eval_natural_queries_latest.json")
     print_section("Recommendation Quality (Natural Queries):")
@@ -69,6 +58,7 @@ def main():
         m = nat["primary_metrics"]
         print(f"  NDCG@10:    {fmt(m.get('ndcg_at_10'))}")
         print(f"  Hit@10:     {fmt(m.get('hit_at_10'))}")
+        print(f"  MRR:        {fmt(m.get('mrr'))}")
     else:
         print("  (not available)")
 

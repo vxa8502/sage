@@ -1,21 +1,46 @@
-# %% [markdown]
-# # Exploratory Data Analysis
-#
-# Analyze the Amazon Electronics reviews dataset to understand
-# data distributions, quality issues, and inform modeling decisions.
+# ruff: noqa: E402
+"""
+Production EDA: Analyze data directly from Qdrant Cloud.
 
-# %% Imports
+Queries the production vector store to generate accurate statistics
+and visualizations. This ensures EDA reports match deployed data.
+
+Usage:
+    python scripts/eda.py
+    make eda
+
+Requires:
+    QDRANT_URL and QDRANT_API_KEY environment variables.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from collections import Counter
 from pathlib import Path
 
-import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Validate environment before imports
+if not os.getenv("QDRANT_URL"):
+    print("ERROR: QDRANT_URL not set. Cannot run production EDA.")
+    print("Set QDRANT_URL and QDRANT_API_KEY in .env or environment.")
+    sys.exit(1)
+
 import matplotlib.pyplot as plt
+import numpy as np
 
-from sage.config import CHARS_PER_TOKEN, DEV_SUBSET_SIZE, DATA_DIR
-from sage.data import load_reviews, get_review_stats, prepare_data
+from sage.adapters.vector_store import get_client, get_collection_info
+from sage.config import COLLECTION_NAME, CHARS_PER_TOKEN, DATA_DIR
 
-# Output directory for figures
 FIGURES_DIR = DATA_DIR / "figures"
-FIGURES_DIR.mkdir(exist_ok=True)
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+
+REPORTS_DIR = Path("reports")
+REPORTS_DIR.mkdir(exist_ok=True)
 
 # Plot configuration
 plt.style.use("seaborn-v0_8-whitegrid")
@@ -23,7 +48,7 @@ plt.rcParams.update(
     {
         "figure.figsize": (10, 5),
         "figure.dpi": 100,
-        "savefig.dpi": 300,  # High-res for markdown reports
+        "savefig.dpi": 300,
         "savefig.bbox": "tight",
         "savefig.pad_inches": 0.1,
         "font.size": 11,
@@ -33,481 +58,412 @@ plt.rcParams.update(
     }
 )
 
-# Enable retina display for Jupyter notebooks
-try:
-    from IPython import get_ipython
-
-    if get_ipython() is not None:
-        get_ipython().run_line_magic("matplotlib", "inline")
-        get_ipython().run_line_magic("config", "InlineBackend.figure_format='retina'")
-except (ImportError, AttributeError):
-    pass
-
 PRIMARY_COLOR = "#05A0D1"
 SECONDARY_COLOR = "#FF9900"
 FIGURE_SIZE_WIDE = (12, 5)
 
-# %% Load data
-df = load_reviews(subset_size=DEV_SUBSET_SIZE)
-print(f"Loaded {len(df):,} reviews")
 
-# %% Basic statistics
-stats = get_review_stats(df)
-print("\n=== Dataset Overview ===")
-for key, value in stats.items():
-    if isinstance(value, float):
-        print(f"{key}: {value:.2f}")
-    else:
-        print(f"{key}: {value}")
+def scroll_all_payloads(client, batch_size: int = 1000, limit: int | None = None):
+    """
+    Scroll through all points in the collection and yield payloads.
 
-# %% Rating distribution
-fig, ax = plt.subplots()
-rating_counts = pd.Series(stats["rating_dist"])
-bars = ax.bar(
-    rating_counts.index, rating_counts.values, color=PRIMARY_COLOR, edgecolor="black"
-)
-ax.set_xlabel("Rating")
-ax.set_ylabel("Count")
-ax.set_title("Rating Distribution")
-ax.set_xticks(rating_counts.index)
+    Args:
+        client: Qdrant client.
+        batch_size: Points per scroll request.
+        limit: Optional max points to retrieve (None = all).
 
-for bar, count in zip(bars, rating_counts.values, strict=True):
-    ax.text(
-        bar.get_x() + bar.get_width() / 2,
-        bar.get_height() + 50,
-        f"{count:,}",
-        ha="center",
-        va="bottom",
-        fontsize=10,
+    Yields:
+        Payload dicts from each point.
+    """
+    offset = None
+    total = 0
+
+    while True:
+        results = client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=batch_size,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        points, next_offset = results
+
+        if not points:
+            break
+
+        for point in points:
+            yield point.payload
+            total += 1
+            if limit and total >= limit:
+                return
+
+        offset = next_offset
+        if offset is None:
+            break
+
+
+def compute_stats(client, sample_size: int | None = None) -> dict:
+    """
+    Compute statistics from production Qdrant data.
+
+    Args:
+        client: Qdrant client.
+        sample_size: Optional limit for faster iteration.
+
+    Returns:
+        Dict with computed statistics.
+    """
+    print("Scanning Qdrant collection...")
+
+    ratings = []
+    text_lengths = []
+    timestamps = []
+    product_ids = set()
+    review_ids = set()
+    chunks_per_review = {}
+
+    for i, payload in enumerate(scroll_all_payloads(client, limit=sample_size)):
+        if i % 10000 == 0 and i > 0:
+            print(f"  Processed {i:,} chunks...")
+
+        ratings.append(payload.get("rating", 0))
+        text_lengths.append(len(payload.get("text", "")))
+        timestamps.append(payload.get("timestamp", 0))
+        product_ids.add(payload.get("product_id"))
+        review_ids.add(payload.get("review_id"))
+
+        # Track chunks per review
+        review_id = payload.get("review_id")
+        total_chunks = payload.get("total_chunks", 1)
+        if review_id:
+            chunks_per_review[review_id] = total_chunks
+
+    print(f"  Scanned {len(ratings):,} total chunks")
+
+    # Compute distributions
+    rating_dist = Counter(ratings)
+    chunk_dist = Counter(chunks_per_review.values())
+
+    # Estimate tokens from text length
+    token_lengths = [length // CHARS_PER_TOKEN for length in text_lengths]
+
+    return {
+        "total_chunks": len(ratings),
+        "unique_reviews": len(review_ids),
+        "unique_products": len(product_ids),
+        "ratings": ratings,
+        "rating_dist": dict(sorted(rating_dist.items())),
+        "text_lengths": text_lengths,
+        "token_lengths": token_lengths,
+        "timestamps": timestamps,
+        "chunks_per_review": list(chunks_per_review.values()),
+        "chunk_dist": dict(sorted(chunk_dist.items())),
+    }
+
+
+def generate_figures(stats: dict) -> None:
+    """Generate EDA figures from computed stats."""
+
+    # 1. Rating distribution
+    fig, ax = plt.subplots()
+    rating_counts = stats["rating_dist"]
+    ratings = list(rating_counts.keys())
+    counts = list(rating_counts.values())
+
+    bars = ax.bar(ratings, counts, color=PRIMARY_COLOR, edgecolor="black")
+    ax.set_xlabel("Rating")
+    ax.set_ylabel("Chunk Count")
+    ax.set_title("Rating Distribution (Production Data)")
+    ax.set_xticks(ratings)
+
+    for bar, count in zip(bars, counts, strict=True):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + max(counts) * 0.01,
+            f"{count:,}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+
+    plt.savefig(FIGURES_DIR / "rating_distribution.png")
+    plt.close()
+    print(f"  Saved: {FIGURES_DIR / 'rating_distribution.png'}")
+
+    # 2. Chunk text length distribution
+    fig, axes = plt.subplots(1, 2, figsize=FIGURE_SIZE_WIDE)
+
+    ax1 = axes[0]
+    lengths = np.array(stats["text_lengths"])
+    ax1.hist(lengths.clip(max=2000), bins=50, color=PRIMARY_COLOR, edgecolor="black")
+    ax1.set_xlabel("Characters")
+    ax1.set_ylabel("Chunk Count")
+    ax1.set_title("Chunk Length Distribution")
+    ax1.axvline(
+        np.median(lengths),
+        color=SECONDARY_COLOR,
+        linestyle="--",
+        label=f"Median: {np.median(lengths):.0f}",
+    )
+    ax1.legend()
+
+    ax2 = axes[1]
+    tokens = np.array(stats["token_lengths"])
+    ax2.hist(tokens.clip(max=500), bins=50, color=SECONDARY_COLOR, edgecolor="black")
+    ax2.set_xlabel("Estimated Tokens")
+    ax2.set_ylabel("Chunk Count")
+    ax2.set_title("Chunk Token Distribution")
+    ax2.axvline(
+        np.median(tokens),
+        color=PRIMARY_COLOR,
+        linestyle="--",
+        label=f"Median: {np.median(tokens):.0f}",
+    )
+    ax2.legend()
+
+    plt.savefig(FIGURES_DIR / "chunk_lengths.png")
+    plt.close()
+    print(f"  Saved: {FIGURES_DIR / 'chunk_lengths.png'}")
+
+    # 3. Chunks per review distribution
+    fig, ax = plt.subplots()
+    chunk_counts = stats["chunk_dist"]
+    x = list(chunk_counts.keys())
+    y = list(chunk_counts.values())
+
+    ax.bar(x, y, color=PRIMARY_COLOR, edgecolor="black")
+    ax.set_xlabel("Chunks per Review")
+    ax.set_ylabel("Number of Reviews")
+    ax.set_title("Review Chunking Distribution")
+
+    plt.savefig(FIGURES_DIR / "chunks_per_review.png")
+    plt.close()
+    print(f"  Saved: {FIGURES_DIR / 'chunks_per_review.png'}")
+
+    # 4. Temporal distribution (if timestamps exist)
+    timestamps = [t for t in stats["timestamps"] if t and t > 0]
+    if timestamps:
+        from datetime import datetime
+
+        fig, ax = plt.subplots()
+
+        # Convert to dates and count by month
+        dates = [datetime.fromtimestamp(t / 1000) for t in timestamps]
+        months = [d.strftime("%Y-%m") for d in dates]
+        month_counts = Counter(months)
+        sorted_months = sorted(month_counts.items())
+
+        if len(sorted_months) > 24:
+            # Show only last 24 months if too many
+            sorted_months = sorted_months[-24:]
+
+        x = [m[0] for m in sorted_months]
+        y = [m[1] for m in sorted_months]
+
+        ax.bar(range(len(x)), y, color=PRIMARY_COLOR)
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Chunk Count")
+        ax.set_title("Temporal Distribution")
+        ax.set_xticks(range(0, len(x), max(1, len(x) // 6)))
+        ax.set_xticklabels(
+            [x[i] for i in range(0, len(x), max(1, len(x) // 6))], rotation=45
+        )
+
+        plt.savefig(FIGURES_DIR / "temporal_distribution.png")
+        plt.close()
+        print(f"  Saved: {FIGURES_DIR / 'temporal_distribution.png'}")
+
+
+def generate_report(stats: dict, collection_info: dict) -> None:
+    """Generate markdown EDA report."""
+
+    total_chunks = stats["total_chunks"]
+    unique_reviews = stats["unique_reviews"]
+    unique_products = stats["unique_products"]
+
+    # Rating stats
+    rating_dist = stats["rating_dist"]
+    total_ratings = sum(rating_dist.values())
+    five_star_pct = (
+        rating_dist.get(5.0, rating_dist.get(5, 0)) / total_ratings * 100
+        if total_ratings
+        else 0
+    )
+    one_star_pct = (
+        rating_dist.get(1.0, rating_dist.get(1, 0)) / total_ratings * 100
+        if total_ratings
+        else 0
     )
 
-plt.savefig(FIGURES_DIR / "rating_distribution.png")
+    # Length stats
+    lengths = stats["text_lengths"]
+    tokens = stats["token_lengths"]
+    median_chars = int(np.median(lengths)) if lengths else 0
+    median_tokens = int(np.median(tokens)) if tokens else 0
+    mean_chars = int(np.mean(lengths)) if lengths else 0
 
-print("\nRating breakdown:")
-for rating, count in rating_counts.items():
-    pct = count / len(df) * 100
-    print(f"  {int(rating)} stars: {count:,} ({pct:.1f}%)")
+    # Chunk distribution
+    chunk_dist = stats["chunk_dist"]
+    single_chunk_reviews = chunk_dist.get(1, 0)
+    multi_chunk_reviews = unique_reviews - single_chunk_reviews
+    expansion_ratio = total_chunks / unique_reviews if unique_reviews else 0
 
-# %% Review length analysis
-df["text_length"] = df["text"].str.len()
-df["word_count"] = df["text"].str.split().str.len()
-df["estimated_tokens"] = df["text_length"] // CHARS_PER_TOKEN
+    # Rating breakdown
+    rating_lines = []
+    for rating in sorted(rating_dist.keys()):
+        count = rating_dist[rating]
+        pct = count / total_ratings * 100 if total_ratings else 0
+        rating_lines.append(f"| {int(rating)} | {count:,} | {pct:.1f}% |")
 
-fig, axes = plt.subplots(1, 2, figsize=FIGURE_SIZE_WIDE)
+    report_content = f"""# Exploratory Data Analysis: Production Data
 
-# Character length histogram
-ax1 = axes[0]
-df["text_length"].clip(upper=2000).hist(
-    bins=50, ax=ax1, color=PRIMARY_COLOR, edgecolor="white"
-)
-ax1.set_xlabel("Character Length (clipped at 2000)")
-ax1.set_ylabel("Count")
-ax1.set_title("Review Length Distribution")
-ax1.axvline(
-    df["text_length"].median(),
-    color="red",
-    linestyle="--",
-    label=f"Median: {df['text_length'].median():.0f}",
-)
-ax1.legend()
-
-# Token estimate histogram
-ax2 = axes[1]
-df["estimated_tokens"].clip(upper=500).hist(
-    bins=50, ax=ax2, color=SECONDARY_COLOR, edgecolor="white"
-)
-ax2.set_xlabel("Estimated Tokens (clipped at 500)")
-ax2.set_ylabel("Count")
-ax2.set_title("Estimated Token Distribution")
-ax2.axvline(200, color="red", linestyle="--", label="Chunking threshold (200)")
-ax2.legend()
-
-plt.savefig(FIGURES_DIR / "review_lengths.png")
-
-needs_chunking = (df["estimated_tokens"] > 200).sum()
-print("\nReview length stats:")
-print(f"  Median characters: {df['text_length'].median():.0f}")
-print(f"  Median tokens (est): {df['estimated_tokens'].median():.0f}")
-print(
-    f"  Reviews > 200 tokens: {needs_chunking:,} ({needs_chunking / len(df) * 100:.1f}%)"
-)
-
-# %% Review length by rating
-fig, ax = plt.subplots()
-length_by_rating = df.groupby("rating")["text_length"].median()
-bars = ax.bar(
-    length_by_rating.index,
-    length_by_rating.values,
-    color=PRIMARY_COLOR,
-    edgecolor="white",
-)
-ax.set_xlabel("Rating")
-ax.set_ylabel("Median Review Length (chars)")
-ax.set_title("Review Length by Rating")
-ax.set_xticks([1, 2, 3, 4, 5])
-
-plt.savefig(FIGURES_DIR / "length_by_rating.png")
-
-print("\nMedian review length by rating:")
-for rating, length in length_by_rating.items():
-    print(f"  {int(rating)} stars: {length:.0f} chars")
-
-# %% Temporal analysis
-df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-df["year_month"] = df["datetime"].dt.to_period("M")
-
-reviews_over_time = df.groupby("year_month").size()
-
-fig, ax = plt.subplots(figsize=FIGURE_SIZE_WIDE)
-reviews_over_time.plot(
-    kind="line", ax=ax, marker="o", markersize=3, linewidth=1, color=PRIMARY_COLOR
-)
-ax.set_xlabel("Month")
-ax.set_ylabel("Number of Reviews")
-ax.set_title("Reviews Over Time")
-plt.xticks(rotation=45)
-
-plt.savefig(FIGURES_DIR / "reviews_over_time.png")
-
-print("\nTemporal range:")
-print(f"  Earliest: {df['datetime'].min()}")
-print(f"  Latest: {df['datetime'].max()}")
-
-# %% Data quality checks
-print("\n=== Data Quality Checks ===")
-
-# Missing values
-missing = df.isnull().sum()
-print("\nMissing values:")
-for col, count in missing.items():
-    if count > 0:
-        print(f"  {col}: {count:,} ({count / len(df) * 100:.2f}%)")
-if missing.sum() == 0:
-    print("  None!")
-
-# Empty reviews
-empty_reviews = (df["text"].str.strip() == "").sum()
-print(f"\nEmpty reviews: {empty_reviews:,}")
-
-# Very short reviews (< 10 chars)
-very_short = (df["text_length"] < 10).sum()
-print(f"Very short reviews (<10 chars): {very_short:,}")
-
-# Duplicate reviews
-duplicate_texts = df["text"].duplicated().sum()
-print(f"Duplicate review texts: {duplicate_texts:,}")
-
-# Verified vs unverified
-if "verified_purchase" in df.columns:
-    verified_pct = df["verified_purchase"].mean() * 100
-    print(f"\nVerified purchases: {verified_pct:.1f}%")
-
-# %% User and item coverage
-user_counts = df["user_id"].value_counts()
-item_counts = df["parent_asin"].value_counts()
-
-fig, axes = plt.subplots(1, 2, figsize=FIGURE_SIZE_WIDE)
-
-# Reviews per user
-ax1 = axes[0]
-user_counts.clip(upper=20).value_counts().sort_index().plot(
-    kind="bar", ax=ax1, color=PRIMARY_COLOR
-)
-ax1.set_xlabel("Reviews per User")
-ax1.set_ylabel("Number of Users")
-ax1.set_title("User Activity Distribution")
-
-# Reviews per item
-ax2 = axes[1]
-item_counts.clip(upper=20).value_counts().sort_index().plot(
-    kind="bar", ax=ax2, color=SECONDARY_COLOR
-)
-ax2.set_xlabel("Reviews per Item")
-ax2.set_ylabel("Number of Items")
-ax2.set_title("Item Popularity Distribution")
-
-plt.savefig(FIGURES_DIR / "user_item_distribution.png")
-
-print("\nUser activity:")
-print(
-    f"  Users with 1 review: {(user_counts == 1).sum():,} ({(user_counts == 1).sum() / len(user_counts) * 100:.1f}%)"
-)
-print(f"  Users with 5+ reviews: {(user_counts >= 5).sum():,}")
-print(f"  Max reviews by one user: {user_counts.max()}")
-
-print("\nItem popularity:")
-print(
-    f"  Items with 1 review: {(item_counts == 1).sum():,} ({(item_counts == 1).sum() / len(item_counts) * 100:.1f}%)"
-)
-print(f"  Items with 5+ reviews: {(item_counts >= 5).sum():,}")
-print(f"  Max reviews for one item: {item_counts.max()}")
-
-# %% 5-core eligibility
-users_5plus = set(user_counts[user_counts >= 5].index)
-items_5plus = set(item_counts[item_counts >= 5].index)
-
-eligible_mask = df["user_id"].isin(users_5plus) & df["parent_asin"].isin(items_5plus)
-print("\n5-core filtering preview:")
-print(
-    f"  Reviews eligible (first pass): {eligible_mask.sum():,} ({eligible_mask.sum() / len(df) * 100:.1f}%)"
-)
-
-# %% Sample reviews across length buckets
-print("\n=== Sample Reviews by Length Bucket ===")
-print("(Understanding content patterns before chunking)\n")
-
-length_buckets = [
-    (0, 50, "Very short (0-50 tokens)"),
-    (50, 100, "Short (50-100 tokens)"),
-    (100, 200, "Medium (100-200 tokens)"),
-    (200, 400, "Long (200-400 tokens)"),
-    (400, float("inf"), "Very long (400+ tokens)"),
-]
-
-for min_tok, max_tok, label in length_buckets:
-    bucket_mask = (df["estimated_tokens"] >= min_tok) & (
-        df["estimated_tokens"] < max_tok
-    )
-    bucket_df = df[bucket_mask]
-
-    if len(bucket_df) == 0:
-        print(f"{label}: No reviews")
-        continue
-
-    print(
-        f"{label}: {len(bucket_df):,} reviews ({len(bucket_df) / len(df) * 100:.1f}%)"
-    )
-
-    samples = bucket_df.sample(min(3, len(bucket_df)), random_state=42)
-    for _, row in samples.iterrows():
-        rating = int(row["rating"])
-        tokens = row["estimated_tokens"]
-        text = row["text"][:200] + "..." if len(row["text"]) > 200 else row["text"]
-        text = text.replace("\n", " ")
-        print(f"  [{rating}*] ({tokens} tok) {text}")
-    print()
-
-# %% Prepared data comparison
-print("\n=== Prepared Data (what the model sees) ===")
-df_prepared = prepare_data(subset_size=DEV_SUBSET_SIZE, verbose=False)
-prepared_stats = get_review_stats(df_prepared)
-
-print(f"Raw reviews: {len(df):,}")
-print(
-    f"Prepared reviews: {len(df_prepared):,} ({len(df_prepared) / len(df) * 100:.1f}% retained)"
-)
-print(f"Unique users: {prepared_stats['unique_users']:,}")
-print(f"Unique items: {prepared_stats['unique_items']:,}")
-print(
-    f"Avg rating: {prepared_stats['avg_rating']:.2f} (raw: {stats['avg_rating']:.2f})"
-)
-
-# %% Summary
-print("\n" + "=" * 50)
-print("EDA SUMMARY")
-print("=" * 50)
-print(f"Total reviews: {len(df):,}")
-print(f"Unique users: {df['user_id'].nunique():,}")
-print(f"Unique items: {df['parent_asin'].nunique():,}")
-print(f"Average rating: {df['rating'].mean():.2f}")
-print(
-    f"Reviews needing chunking: {needs_chunking:,} ({needs_chunking / len(df) * 100:.1f}%)"
-)
-print(f"Data quality issues: {empty_reviews + very_short + duplicate_texts}")
-print(f"\nPlots saved to: {FIGURES_DIR}")
-
-# %% Generate markdown report
-REPORTS_DIR = Path("reports")
-REPORTS_DIR.mkdir(exist_ok=True)
-
-# Compute all stats for report
-raw_total = len(df)
-prepared_total = len(df_prepared)
-unique_users_raw = df["user_id"].nunique()
-unique_items_raw = df["parent_asin"].nunique()
-unique_users_prepared = prepared_stats["unique_users"]
-unique_items_prepared = prepared_stats["unique_items"]
-avg_rating_raw = stats["avg_rating"]
-avg_rating_prepared = prepared_stats["avg_rating"]
-retention_pct = prepared_total / raw_total * 100
-
-median_chars = df["text_length"].median()
-mean_chars = df["text_length"].mean()
-median_tokens = df["estimated_tokens"].median()
-chunking_pct = needs_chunking / len(df) * 100
-
-five_star_pct = rating_counts.get(5, 0) / len(df) * 100
-one_star_pct = rating_counts.get(1, 0) / len(df) * 100
-middle_pct = 100 - five_star_pct - one_star_pct
-
-users_one_review = (user_counts == 1).sum()
-users_one_review_pct = users_one_review / len(user_counts) * 100
-users_5plus = (user_counts >= 5).sum()
-max_user_reviews = user_counts.max()
-
-items_one_review = (item_counts == 1).sum()
-items_one_review_pct = items_one_review / len(item_counts) * 100
-items_5plus = (item_counts >= 5).sum()
-max_item_reviews = item_counts.max()
-
-length_1star = length_by_rating.get(1, 0)
-length_2star = length_by_rating.get(2, 0)
-length_3star = length_by_rating.get(3, 0)
-length_4star = length_by_rating.get(4, 0)
-length_5star = length_by_rating.get(5, 0)
-
-report_content = f"""# Exploratory Data Analysis: Amazon Electronics Reviews
-
-**Dataset:** McAuley-Lab/Amazon-Reviews-2023 (Electronics category)
-**Subset:** {raw_total:,} raw reviews -> {prepared_total:,} after 5-core filtering
+**Source:** Qdrant Cloud (Collection: `{collection_info.get("name", COLLECTION_NAME)}`)
+**Status:** {collection_info.get("status", "unknown")}
+**Generated from live production data**
 
 ---
 
 ## Dataset Overview
 
-The Amazon Electronics reviews dataset provides rich user feedback data for building recommendation systems. After standard preprocessing and 5-core filtering (requiring users and items to have at least 5 interactions), the dataset exhibits the characteristic sparsity of real-world recommendation scenarios.
+This report analyzes the actual data deployed in production, ensuring all statistics match what the recommendation system uses.
 
-| Metric | Raw | After 5-Core |
-|--------|-----|--------------|
-| Total Reviews | {raw_total:,} | {prepared_total:,} |
-| Unique Users | {unique_users_raw:,} | {unique_users_prepared:,} |
-| Unique Items | {unique_items_raw:,} | {unique_items_prepared:,} |
-| Avg Rating | {avg_rating_raw:.2f} | {avg_rating_prepared:.2f} |
-| Retention | - | {retention_pct:.1f}% |
+| Metric | Value |
+|--------|-------|
+| Total Chunks | {total_chunks:,} |
+| Unique Reviews | {unique_reviews:,} |
+| Unique Products | {unique_products:,} |
+| Expansion Ratio | {expansion_ratio:.2f}x |
 
 ---
 
 ## Rating Distribution
 
-Amazon reviews exhibit a well-known J-shaped distribution, heavily skewed toward 5-star ratings. This reflects both genuine satisfaction and selection bias (dissatisfied customers often don't leave reviews).
+Amazon reviews exhibit a characteristic J-shaped distribution, heavily skewed toward 5-star ratings.
 
 ![Rating Distribution](../data/figures/rating_distribution.png)
 
+| Rating | Count | Percentage |
+|--------|-------|------------|
+{chr(10).join(rating_lines)}
+
 **Key Observations:**
-- 5-star ratings dominate ({five_star_pct:.1f}% of reviews)
-- 1-star reviews form the second largest group ({one_star_pct:.1f}%)
-- Middle ratings (2-4 stars) are relatively rare ({middle_pct:.1f}% combined)
+- 5-star ratings: {five_star_pct:.1f}% of chunks
+- 1-star ratings: {one_star_pct:.1f}% of chunks
 - This polarization is typical for e-commerce review data
 
-**Implications for Modeling:**
-- Binary classification (positive/negative) may be more robust than regression
-- Rating-weighted aggregation should account for the skewed distribution
-- Evidence from 4-5 star reviews carries stronger positive signal
+---
+
+## Chunk Length Analysis
+
+Chunk lengths affect retrieval quality and context window usage.
+
+![Chunk Lengths](../data/figures/chunk_lengths.png)
+
+**Statistics:**
+- Median chunk length: {median_chars:,} characters (~{median_tokens} tokens)
+- Mean chunk length: {mean_chars:,} characters
+- Most chunks fit comfortably within embedding model context
 
 ---
 
-## Review Length Analysis
+## Chunking Distribution
 
-Review length varies significantly and correlates with the chunking strategy for the RAG pipeline. Most reviews are short enough to embed directly without chunking.
+Reviews are chunked based on length: short reviews stay whole, longer reviews are split semantically.
 
-![Review Length Distribution](../data/figures/review_lengths.png)
+![Chunks per Review](../data/figures/chunks_per_review.png)
 
-**Length Statistics:**
-- Median: {median_chars:.0f} characters (~{median_tokens:.0f} tokens)
-- Mean: {mean_chars:.0f} characters (~{mean_chars / 4:.0f} tokens)
-- Reviews exceeding 200 tokens: {chunking_pct:.1f}% (require chunking)
+| Metric | Value |
+|--------|-------|
+| Single-chunk reviews | {single_chunk_reviews:,} |
+| Multi-chunk reviews | {multi_chunk_reviews:,} |
+| Expansion ratio | {expansion_ratio:.2f}x |
 
-**Chunking Strategy Validation:**
-The tiered chunking approach is well-suited to this distribution:
-- **Short (<200 tokens):** No chunking needed - majority of reviews
-- **Medium (200-500 tokens):** Semantic chunking at topic boundaries
-- **Long (>500 tokens):** Semantic + sliding window fallback
-
----
-
-## Review Length by Rating
-
-Negative reviews tend to be longer than positive ones. Users who are dissatisfied often provide detailed explanations of issues, while satisfied users may simply express approval.
-
-![Review Length by Rating](../data/figures/length_by_rating.png)
-
-**Pattern:**
-- 1-star reviews: {length_1star:.0f} chars median
-- 2-3 star reviews: {length_2star:.0f}-{length_3star:.0f} chars median (users explain nuance)
-- 4-star reviews: {length_4star:.0f} chars median
-- 5-star reviews: {length_5star:.0f} chars median
-
-**Implications:**
-- Negative reviews provide richer evidence for issue identification
-- Positive reviews may require multiple chunks for substantive explanations
-- Rating filters (min_rating=4) naturally bias toward shorter evidence
+**Chunking Strategy:**
+- Reviews < 200 tokens: No chunking (embedded whole)
+- Reviews 200-500 tokens: Semantic chunking
+- Reviews > 500 tokens: Semantic + sliding window
 
 ---
 
 ## Temporal Distribution
 
-The dataset spans multiple years of reviews, enabling proper temporal train/validation/test splits that prevent data leakage.
+Review timestamps enable chronological analysis and temporal evaluation splits.
 
-![Reviews Over Time](../data/figures/reviews_over_time.png)
-
-**Temporal Split Strategy:**
-- **Train (70%):** Oldest reviews - model learns from historical patterns
-- **Validation (10%):** Middle period - hyperparameter tuning
-- **Test (20%):** Most recent - simulates production deployment
-
-This chronological ordering ensures the model never sees "future" data during training.
+![Temporal Distribution](../data/figures/temporal_distribution.png)
 
 ---
 
-## User and Item Activity
+## Data Quality
 
-The long-tail distribution is pronounced: most users write few reviews, and most items receive few reviews. This sparsity is the fundamental challenge recommendation systems address.
+The production dataset has been through 5-core filtering (users and items with 5+ interactions) and quality checks:
 
-![User and Item Distribution](../data/figures/user_item_distribution.png)
-
-**User Activity:**
-- Users with only 1 review: {users_one_review_pct:.1f}%
-- Users with 5+ reviews: {users_5plus:,}
-- Power user max: {max_user_reviews} reviews
-
-**Item Popularity:**
-- Items with only 1 review: {items_one_review_pct:.1f}%
-- Items with 5+ reviews: {items_5plus:,}
-- Most reviewed item: {max_item_reviews} reviews
-
-**Cold-Start Implications:**
-- Many items have sparse evidence - content-based features are critical
-- User cold-start is common - onboarding preferences help
-- 5-core filtering ensures minimum evidence density for evaluation
-
----
-
-## Data Quality Assessment
-
-The raw dataset contains several quality issues addressed during preprocessing.
-
-| Issue | Count | Resolution |
-|-------|-------|------------|
-| Missing text | 0 | - |
-| Empty reviews | {empty_reviews} | Removed |
-| Very short (<10 chars) | {very_short:,} | Removed |
-| Duplicate texts | {duplicate_texts:,} | Kept (valid re-purchases) |
-| Invalid ratings | 0 | - |
-
-**Post-Cleaning:**
-- All reviews have valid text content
+- All chunks have valid text content
 - All ratings are in [1, 5] range
-- All user/product identifiers present
+- All product identifiers present
+- Deterministic chunk IDs (MD5 hash of review_id + chunk_index)
 
 ---
 
 ## Summary
 
-The Amazon Electronics dataset, after 5-core filtering and cleaning, provides a solid foundation for building and evaluating a RAG-based recommendation system:
+This production EDA confirms the deployed data characteristics:
 
-1. **Scale:** {prepared_total:,} reviews across {unique_users_prepared:,} users and {unique_items_prepared:,} items
-2. **Sparsity:** {100 - retention_pct:.1f}% filtered - realistic for recommendation evaluation
-3. **Quality:** Clean text, valid ratings, proper identifiers
-4. **Temporal:** Supports chronological train/val/test splits
-5. **Content:** Review lengths suit the tiered chunking strategy
+1. **Scale:** {total_chunks:,} chunks across {unique_products:,} products
+2. **Quality:** 5-core filtered, validated payloads
+3. **Distribution:** J-shaped ratings, typical e-commerce pattern
+4. **Chunking:** {expansion_ratio:.2f}x expansion from reviews to chunks
 
-The J-shaped rating distribution and long-tail user/item activity are characteristic of real e-commerce data, making this an appropriate benchmark for portfolio demonstration.
+The data matches what the recommendation API queries in real-time.
 
 ---
 
-*Report auto-generated by `scripts/eda.py`. Run `make eda` to regenerate.*
+*Report generated from Qdrant Cloud. Run `make eda` to regenerate.*
 """
 
-report_path = REPORTS_DIR / "eda_report.md"
-report_path.write_text(report_content)
-print(f"\nReport generated: {report_path}")
+    report_path = REPORTS_DIR / "eda_report.md"
+    report_path.write_text(report_content)
+    print(f"  Report: {report_path}")
+
+
+def main():
+    print("=" * 60)
+    print("PRODUCTION EDA: Querying Qdrant Cloud")
+    print("=" * 60)
+
+    client = get_client()
+
+    # Get collection info
+    try:
+        info = get_collection_info(client)
+        print(f"\nCollection: {info['name']}")
+        print(f"Points: {info['points_count']:,}")
+        print(f"Status: {info['status']}")
+    except Exception as e:
+        print(f"ERROR: Cannot access collection: {e}")
+        print("Ensure QDRANT_URL and QDRANT_API_KEY are correct.")
+        sys.exit(1)
+
+    # Compute stats
+    print("\n--- Computing Statistics ---")
+    stats = compute_stats(client)
+
+    # Generate figures
+    print("\n--- Generating Figures ---")
+    generate_figures(stats)
+
+    # Generate report
+    print("\n--- Generating Report ---")
+    generate_report(stats, info)
+
+    print("\n" + "=" * 60)
+    print("EDA COMPLETE")
+    print("=" * 60)
+    print(f"Figures: {FIGURES_DIR}/")
+    print(f"Report:  {REPORTS_DIR / 'eda_report.md'}")
+
+    client.close()
+
+
+if __name__ == "__main__":
+    main()

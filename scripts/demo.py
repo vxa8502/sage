@@ -44,7 +44,7 @@ def demo_recommendation(query: str, top_k: int = 3, max_evidence: int = 3):
         return None
 
     # Initialize services
-    from scripts.lib.services import get_explanation_services
+    from sage.services import get_explanation_services
 
     explainer, detector = get_explanation_services()
 

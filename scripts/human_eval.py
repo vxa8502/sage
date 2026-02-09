@@ -105,7 +105,7 @@ def generate_samples(force: bool = False, seed: int = 42):
     import random
 
     from sage.services.retrieval import get_candidates
-    from scripts.lib.services import get_explanation_services
+    from sage.services import get_explanation_services
 
     # Protect existing rated samples from accidental overwrite
     if SAMPLES_FILE.exists() and not force:

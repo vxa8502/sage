@@ -338,26 +338,31 @@ def main():
     parser.add_argument(
         "--dataset",
         "-d",
-        default="eval_loo_history.json",
-        help="Evaluation dataset file (default: eval_loo_history.json)",
+        default="eval_natural_queries.json",
+        help="Evaluation dataset file (default: eval_natural_queries.json)",
     )
     args = parser.parse_args()
 
     log_banner(logger, "OFFLINE EVALUATION")
 
-    # Load data
-    logger.info("Loading data...")
-    train_df, _, test_df = load_splits()
-    train_records = train_df.to_dict("records")
-    all_products = list(train_df["parent_asin"].unique())
-
-    item_popularity = compute_item_popularity(train_records, item_key="parent_asin")
-
+    # Load product embeddings from Qdrant (always available)
     logger.info("Loading product embeddings from Qdrant...")
     item_embeddings = load_product_embeddings_from_qdrant()
     total_items = len(item_embeddings)
-
     logger.info("Products in catalog: %d", total_items)
+
+    # Try to load splits for beyond-accuracy metrics (optional)
+    item_popularity = None
+    train_records = None
+    all_products = None
+    try:
+        train_df, _, _ = load_splits()
+        train_records = train_df.to_dict("records")
+        all_products = list(train_df["parent_asin"].unique())
+        item_popularity = compute_item_popularity(train_records, item_key="parent_asin")
+        logger.info("Loaded splits for beyond-accuracy metrics")
+    except FileNotFoundError:
+        logger.info("Splits not available - beyond-accuracy metrics will be skipped")
 
     # Load eval cases
     logger.info("Loading evaluation dataset: %s", args.dataset)
@@ -398,9 +403,14 @@ def main():
             "ndcg_at_10": best_ndcg,
         }
 
-    # Baseline comparison
+    # Baseline comparison (requires splits)
     if args.baselines:
-        run_baseline_comparison(cases, train_records, all_products, item_embeddings)
+        if train_records is None:
+            logger.warning(
+                "Skipping baselines - requires local splits (run 'make splits')"
+            )
+        else:
+            run_baseline_comparison(cases, train_records, all_products, item_embeddings)
 
     # Save results (uses dataset stem as prefix for both timestamped and latest files)
     prefix = Path(args.dataset).stem

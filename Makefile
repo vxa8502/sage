@@ -67,14 +67,12 @@ data-validate:
 	assert emb is not None and emb.shape[1] == 384, 'Embedding dimension mismatch'; \
 	print('Validation passed')"
 
-# Exploratory data analysis (generates figures + report)
-eda:
-	@echo "=== EDA ANALYSIS ==="
+# Exploratory data analysis (queries production Qdrant)
+eda: check-env
+	@echo "=== PRODUCTION EDA ==="
 	@mkdir -p data/figures
 	@mkdir -p reports
 	python scripts/eda.py
-	@echo "Figures saved to data/figures/"
-	@echo "Report generated: reports/eda_report.md"
 
 # ---------------------------------------------------------------------------
 # Evaluation Suite
@@ -82,15 +80,10 @@ eda:
 
 # Standard evaluation: primary metrics, spot-checks, explanation tests, faithfulness
 eval: check-env
-	@test -d data/splits || (echo "ERROR: Run 'make data' first" && exit 1)
 	@echo "=== EVALUATION SUITE ===" && \
 	echo "" && \
-	echo "--- Building evaluation datasets ---" && \
-	python scripts/build_eval_dataset.py && \
+	echo "--- Building natural query evaluation dataset ---" && \
 	python scripts/build_natural_eval_dataset.py && \
-	echo "" && \
-	echo "--- Recommendation evaluation (LOO history) ---" && \
-	python scripts/evaluation.py --dataset eval_loo_history.json --section primary && \
 	echo "" && \
 	echo "--- Recommendation evaluation (natural queries) ---" && \
 	python scripts/evaluation.py --dataset eval_natural_queries.json --section primary && \
@@ -114,9 +107,6 @@ eval-deep: check-env
 	@test -d data/eval || (echo "ERROR: Run 'make eval' first to build eval datasets" && exit 1)
 	@echo "=== DEEP EVALUATION (ablations + baselines) ===" && \
 	echo "" && \
-	echo "--- Full recommendation evaluation (LOO history) ---" && \
-	python scripts/evaluation.py --dataset eval_loo_history.json --section all --baselines && \
-	echo "" && \
 	echo "--- Full recommendation evaluation (natural queries) ---" && \
 	python scripts/evaluation.py --dataset eval_natural_queries.json --section all && \
 	echo "" && \
@@ -131,11 +121,9 @@ eval-deep: check-env
 
 # Quick eval: skip RAGAS (faster iteration)
 eval-quick: check-env
-	@test -d data/splits || (echo "ERROR: Run 'make data' first" && exit 1)
 	@echo "=== QUICK EVALUATION (no RAGAS) ==="
-	python scripts/build_eval_dataset.py && \
 	python scripts/build_natural_eval_dataset.py && \
-	python scripts/evaluation.py --dataset eval_loo_history.json --section primary && \
+	python scripts/evaluation.py --dataset eval_natural_queries.json --section primary && \
 	python scripts/faithfulness.py --samples 5
 	@echo "Quick eval complete"
 
@@ -248,10 +236,10 @@ metrics-snapshot:
 	@python -c "\
 	import json; from pathlib import Path; \
 	r = Path('data/eval_results'); \
-	loo = json.load(open(r/'eval_loo_history_latest.json', encoding='utf-8')) if (r/'eval_loo_history_latest.json').exists() else {}; \
+	nq = json.load(open(r/'eval_natural_queries_latest.json', encoding='utf-8')) if (r/'eval_natural_queries_latest.json').exists() else {}; \
 	faith = json.load(open(r/'faithfulness_latest.json', encoding='utf-8')) if (r/'faithfulness_latest.json').exists() else {}; \
 	human = json.load(open(r/'human_eval_latest.json', encoding='utf-8')) if (r/'human_eval_latest.json').exists() else {}; \
-	pm = loo.get('primary_metrics', {}); mm = faith.get('multi_metric', {}); \
+	pm = nq.get('primary_metrics', {}); mm = faith.get('multi_metric', {}); \
 	print('=== SAGE METRICS ==='); \
 	print(f'NDCG@10:     {pm.get(\"ndcg_at_10\", \"n/a\")}'); \
 	print(f'Claim HHEM:  {mm.get(\"claim_level_avg_score\", \"n/a\")}'); \

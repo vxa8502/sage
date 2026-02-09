@@ -104,7 +104,7 @@ class E2EReport:
 
 def run_e2e_evaluation(n_samples: int = 20) -> E2EReport:
     """Run end-to-end success rate evaluation."""
-    from scripts.lib.services import get_explanation_services
+    from sage.services import get_explanation_services
     from sage.services.faithfulness import (
         is_refusal,
         is_mismatch_warning,
