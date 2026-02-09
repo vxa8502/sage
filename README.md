@@ -2,7 +2,7 @@
 title: Sage
 emoji: 🌿
 colorFrom: blue
-colorTo: orange
+colorTo: yellow
 sdk: docker
 app_port: 7860
 ---

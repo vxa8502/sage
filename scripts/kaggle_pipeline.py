@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 # %% [markdown]
 # # Sage: Kaggle GPU Pipeline
 #
