@@ -72,8 +72,7 @@ data-validate:
 # Exploratory data analysis (queries production Qdrant)
 eda: check-env
 	@echo "=== PRODUCTION EDA ==="
-	@mkdir -p data/figures
-	@mkdir -p reports
+	@mkdir -p assets reports
 	python scripts/eda.py
 
 # ---------------------------------------------------------------------------
@@ -131,7 +130,7 @@ eval-all: check-env
 	@echo "=== COMPLETE EVALUATION SUITE ===" && \
 	echo "" && \
 	echo "--- [1/9] EDA (production data) ---" && \
-	mkdir -p data/figures reports && \
+	mkdir -p assets reports && \
 	python scripts/eda.py && \
 	echo "" && \
 	echo "--- [2/9] Retrieval metrics + ablations ---" && \
@@ -308,7 +307,7 @@ reset:
 	rm -f data/eval_results/adjusted_faithfulness_*.json
 	rm -f data/eval_results/grounding_delta_*.json
 	@echo "  (human_eval_*.json preserved — run 'make human-eval' to re-annotate)"
-	rm -rf data/figures/
+	rm -rf assets/*.png
 	rm -f reports/eda_report.md
 	@echo "Done. Run 'make eval-all' to reproduce full evaluation suite."
 	@echo "  (Use 'make reset-hard' to also clear Qdrant + raw cache)"

@@ -34,9 +34,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from sage.adapters.vector_store import get_client, get_collection_info
-from sage.config import COLLECTION_NAME, CHARS_PER_TOKEN, DATA_DIR
+from sage.config import COLLECTION_NAME, CHARS_PER_TOKEN
 
-FIGURES_DIR = DATA_DIR / "figures"
+FIGURES_DIR = Path("assets")
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 REPORTS_DIR = Path("reports")
@@ -341,7 +341,7 @@ This report analyzes the actual data deployed in production, ensuring all statis
 
 Amazon reviews exhibit a characteristic J-shaped distribution, heavily skewed toward 5-star ratings.
 
-![Rating Distribution](../data/figures/rating_distribution.png)
+![Rating Distribution](../assets/rating_distribution.png)
 
 | Rating | Count | Percentage |
 |--------|-------|------------|
@@ -358,7 +358,7 @@ Amazon reviews exhibit a characteristic J-shaped distribution, heavily skewed to
 
 Chunk lengths affect retrieval quality and context window usage.
 
-![Chunk Lengths](../data/figures/chunk_lengths.png)
+![Chunk Lengths](../assets/chunk_lengths.png)
 
 **Statistics:**
 - Median chunk length: {median_chars:,} characters (~{median_tokens} tokens)
@@ -371,7 +371,7 @@ Chunk lengths affect retrieval quality and context window usage.
 
 Reviews are chunked based on length: short reviews stay whole, longer reviews are split semantically.
 
-![Chunks per Review](../data/figures/chunks_per_review.png)
+![Chunks per Review](../assets/chunks_per_review.png)
 
 | Metric | Value |
 |--------|-------|
@@ -390,7 +390,7 @@ Reviews are chunked based on length: short reviews stay whole, longer reviews ar
 
 Review timestamps enable chronological analysis and temporal evaluation splits.
 
-![Temporal Distribution](../data/figures/temporal_distribution.png)
+![Temporal Distribution](../assets/temporal_distribution.png)
 
 ---
 

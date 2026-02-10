@@ -1,6 +1,6 @@
 ---
 title: Sage
-emoji: 🌿
+emoji: 🦉
 colorFrom: blue
 colorTo: yellow
 sdk: docker
@@ -10,7 +10,7 @@ app_port: 7860
 
 # Sage
 
-> A recommendation system that refuses to hallucinate.
+A recommendation system that refuses to hallucinate.
 
 <!-- TODO: Replace with actual demo GIF or screenshot before making repo public -->
 <!-- ![Demo GIF showing API response with grounded explanation](docs/demo.gif) -->
@@ -87,7 +87,7 @@ User Query: "wireless earbuds for running"
 
 The key insight: **hallucination happens when evidence is weak, not when the model is bad.**
 
-When you give an LLM one short review as context, it fills in the gaps with plausible-sounding fabrications. The solution isn't a smarter model — it's refusing to explain when evidence is insufficient.
+When you give an LLM one short review as context, it fills in the gaps with plausible-sounding fabrications. The solution is refusing to explain when evidence is insufficient.
 
 | Decision | Alternative | Why This Choice |
 |----------|-------------|-----------------|
@@ -97,8 +97,6 @@ When you give an LLM one short review as context, it fills in the gaps with plau
 | **HHEM** (Vectara) | GPT-4 judge, NLI models | Purpose-built for RAG hallucination; no API cost; 0.97 AUC. |
 | **Claim-level evaluation** | Full-explanation | Isolates which claims hallucinate; more actionable. |
 | **Quality gate** (refuse) | Always answer | 46% refusal rate → 4.6/5 trust. Honesty > coverage. |
-
-See [`docs/chunking_decisions.md`](docs/chunking_decisions.md) for detailed chunking rationale.
 
 ---
 
