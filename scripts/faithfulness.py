@@ -198,7 +198,7 @@ def run_evaluation(n_samples: int, run_ragas: bool = False):
             "context_recall": "Requires ground-truth reference answers per query (not available)",
         },
         "primary_metric": "claim_level_hhem",
-        "rationale": "Claim-level HHEM (96.8%) is more reliable than full-explanation RAGAS for citation-heavy explanations",
+        "rationale": f"Claim-level HHEM ({multi_report.claim_level_avg_score:.1%}) is more reliable than full-explanation RAGAS for citation-heavy explanations",
     }
 
     ts_file = save_results(results, "faithfulness")
