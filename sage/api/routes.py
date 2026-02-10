@@ -20,7 +20,7 @@ from typing import AsyncIterator
 
 import numpy as np
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from sage.adapters.vector_store import collection_exists
@@ -53,6 +53,17 @@ STREAM_PRODUCT_TIMEOUT = float(os.getenv("STREAM_PRODUCT_TIMEOUT", "15.0"))
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Root redirect (for HF Spaces iframe)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/", include_in_schema=False)
+async def root():
+    """Redirect root to Swagger UI for HF Spaces iframe."""
+    return RedirectResponse(url="/docs")
 
 
 # ---------------------------------------------------------------------------
