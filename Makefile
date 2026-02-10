@@ -388,7 +388,7 @@ reset-eval: reset
 # Target: P99 < 500ms
 load-test:
 	@echo "=== LOAD TEST ==="
-	python scripts/load_test.py --url $(URL) --requests $(REQUESTS)
+	python scripts/load_test.py --url $(URL) --requests $(REQUESTS) --save
 
 # Quick load test (20 requests, no explanations - tests retrieval only)
 load-test-quick:
