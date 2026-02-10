@@ -15,6 +15,7 @@ import asyncio
 
 import numpy as np
 
+from sage.utils import ensure_ragas_installed
 from sage.core import (
     AdjustedFaithfulnessReport,
     AgreementReport,
@@ -120,10 +121,8 @@ def create_ragas_sample(query: str, explanation: str, evidence_texts: list[str])
     Raises:
         ImportError: If ragas is not installed.
     """
-    try:
-        from ragas import SingleTurnSample
-    except ImportError:
-        raise ImportError("ragas package required. Install with: pip install ragas")
+    ensure_ragas_installed()
+    from ragas import SingleTurnSample
 
     # Clean explanation for RAGAS evaluation
     cleaned_explanation = _clean_explanation_for_ragas(explanation)
@@ -162,10 +161,8 @@ def get_ragas_llm(provider: str | None = None):
     Returns:
         RAGAS-compatible LLM wrapper.
     """
-    try:
-        from ragas.llms import llm_factory
-    except ImportError:
-        raise ImportError("ragas package required. Install with: pip install ragas")
+    ensure_ragas_installed()
+    from ragas.llms import llm_factory
 
     provider = provider or LLM_PROVIDER
 
@@ -211,10 +208,8 @@ class FaithfulnessEvaluator:
             provider: LLM provider for RAGAS.
             target: Faithfulness target score (default 0.85).
         """
-        try:
-            from ragas.metrics import Faithfulness
-        except ImportError:
-            raise ImportError("ragas package required. Install with: pip install ragas")
+        ensure_ragas_installed()
+        from ragas.metrics import Faithfulness
 
         self.llm = get_ragas_llm(provider)
         self.scorer = Faithfulness(llm=self.llm)
@@ -262,11 +257,9 @@ class FaithfulnessEvaluator:
         explanation_results: list[ExplanationResult],
     ) -> FaithfulnessReport:
         """Evaluate faithfulness for multiple explanations."""
-        try:
-            from ragas import EvaluationDataset, evaluate
-            from ragas.metrics import Faithfulness
-        except ImportError:
-            raise ImportError("ragas package required. Install with: pip install ragas")
+        ensure_ragas_installed()
+        from ragas import EvaluationDataset, evaluate
+        from ragas.metrics import Faithfulness
 
         samples = _explanation_results_to_samples(explanation_results)
         dataset = EvaluationDataset(samples=samples)

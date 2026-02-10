@@ -92,6 +92,22 @@ def require_imports(*packages: str | tuple[str, str]) -> list[ModuleType]:
     return modules
 
 
+def ensure_ragas_installed() -> None:
+    """Ensure RAGAS package is installed.
+
+    Centralizes the RAGAS availability check used across faithfulness evaluation.
+    Call this before importing RAGAS components to get a clear error message.
+
+    Usage:
+        ensure_ragas_installed()
+        from ragas import SingleTurnSample  # Safe to import now
+
+    Raises:
+        ImportError: If ragas is not installed with install instructions.
+    """
+    require_import("ragas")
+
+
 # ---------------------------------------------------------------------------
 # Lazy Loading Utilities
 # ---------------------------------------------------------------------------

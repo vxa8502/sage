@@ -26,7 +26,13 @@ from sage.api.middleware import (
 from sage.api.routes import router
 from sage.config import get_logger
 
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",")]
+# CORS configuration - explicit origins required for security.
+# Default to empty (no CORS) rather than "*" (all origins).
+# Set CORS_ORIGINS="https://your-domain.com,http://localhost:3000" in production.
+_cors_env = os.getenv("CORS_ORIGINS", "")
+CORS_ORIGINS = (
+    [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else []
+)
 
 # Graceful shutdown timeout (seconds to wait for active requests)
 SHUTDOWN_TIMEOUT = float(os.getenv("SHUTDOWN_TIMEOUT", "30.0"))
@@ -49,17 +55,41 @@ async def _lifespan(app: FastAPI):
     reset_shutdown_coordinator()
     coordinator = get_shutdown_coordinator()
 
-    # Validate LLM credentials early
+    # Validate LLM credentials early - fail fast if invalid
     from sage.config import ANTHROPIC_API_KEY, LLM_PROVIDER, OPENAI_API_KEY
 
-    if not ANTHROPIC_API_KEY and not OPENAI_API_KEY:
-        logger.error(
-            "No LLM API key set -- add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env"
+    def _validate_api_key(key: str | None, provider: str) -> bool:
+        """Validate API key format. Returns True if valid."""
+        if not key:
+            return False
+        if provider == "anthropic":
+            # Anthropic keys start with "sk-ant-" and are 100+ chars
+            return key.startswith("sk-ant-") and len(key) > 50
+        if provider == "openai":
+            # OpenAI keys start with "sk-" and are 40+ chars
+            return key.startswith("sk-") and len(key) > 20
+        return bool(key)  # Unknown provider - just check non-empty
+
+    if LLM_PROVIDER == "anthropic":
+        if not ANTHROPIC_API_KEY:
+            logger.error("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set")
+            raise ValueError("ANTHROPIC_API_KEY required when LLM_PROVIDER=anthropic")
+        if not _validate_api_key(ANTHROPIC_API_KEY, "anthropic"):
+            logger.error("ANTHROPIC_API_KEY has invalid format")
+            raise ValueError(
+                "ANTHROPIC_API_KEY has invalid format (expected sk-ant-...)"
+            )
+    elif LLM_PROVIDER == "openai":
+        if not OPENAI_API_KEY:
+            logger.error("LLM_PROVIDER=openai but OPENAI_API_KEY is not set")
+            raise ValueError("OPENAI_API_KEY required when LLM_PROVIDER=openai")
+        if not _validate_api_key(OPENAI_API_KEY, "openai"):
+            logger.error("OPENAI_API_KEY has invalid format")
+            raise ValueError("OPENAI_API_KEY has invalid format (expected sk-...)")
+    else:
+        logger.warning(
+            "Unknown LLM_PROVIDER=%s, skipping credential validation", LLM_PROVIDER
         )
-    elif LLM_PROVIDER == "anthropic" and not ANTHROPIC_API_KEY:
-        logger.warning("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set")
-    elif LLM_PROVIDER == "openai" and not OPENAI_API_KEY:
-        logger.warning("LLM_PROVIDER=openai but OPENAI_API_KEY is not set")
 
     # Embedder (loads E5-small model) -- required for all requests
     from sage.adapters.embeddings import get_embedder
@@ -134,11 +164,24 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
     )
     app.add_middleware(LatencyMiddleware)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=CORS_ORIGINS,
-        allow_methods=["GET", "POST"],
-        allow_headers=["*"],
-    )
+
+    # CORS middleware with security hardening
+    if CORS_ORIGINS:
+        if "*" in CORS_ORIGINS:
+            logger.warning(
+                "CORS_ORIGINS contains '*' - this allows requests from any origin. "
+                "Set explicit origins in production."
+            )
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=CORS_ORIGINS,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type", "Accept", "Authorization"],
+            allow_credentials=False,
+            max_age=3600,  # Cache preflight for 1 hour
+        )
+    else:
+        logger.info("CORS disabled (no CORS_ORIGINS configured)")
+
     app.include_router(router)
     return app

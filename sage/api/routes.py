@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import AsyncIterator
 
 import numpy as np
@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from sage.adapters.vector_store import collection_exists
 from sage.api.metrics import metrics_response, record_cache_event, record_error
 from sage.config import MAX_EVIDENCE, get_logger
+from sage.utils import normalize_text
 from sage.core import (
     AggregationMethod,
     ExplanationResult,
@@ -38,6 +39,9 @@ from sage.services.retrieval import get_candidates
 # requests, unbounded pools exhaust API rate limits. 4 workers gives
 # good parallelism while bounding total concurrent LLM calls.
 _MAX_EXPLAIN_WORKERS = 4
+
+# Per-worker timeout for explanation generation (prevents hung workers)
+_EXPLAIN_WORKER_TIMEOUT = 30.0
 
 # Request timeout in seconds. David's rule: 10s max end-to-end.
 # If the LLM hangs, cut it off and return what we have.
@@ -206,6 +210,16 @@ def _build_evidence_list(result: ExplanationResult) -> list[dict]:
     return result.to_evidence_dicts()
 
 
+def _build_cache_key(query: str, k: int, explain: bool, min_rating: float) -> str:
+    """Build a cache key that includes all request parameters.
+
+    This prevents returning cached results for different request parameters.
+    For example, a query with k=3 should not return cached results from k=5.
+    """
+    normalized_query = normalize_text(query)
+    return f"{normalized_query}:k={k}:explain={explain}:rating={min_rating:.1f}"
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -313,11 +327,7 @@ async def ready(request: Request):
 
     # Core components must be ready (explainer is optional)
     core_ready = all(
-        [
-            components.get("qdrant", False),
-            components.get("embedder", False),
-            components.get("hhem", False),
-        ]
+        components.get(key, False) for key in ("qdrant", "embedder", "hhem")
     )
 
     if core_ready and components.get("explainer", False):
@@ -349,6 +359,103 @@ async def ready(request: Request):
 # ---------------------------------------------------------------------------
 
 
+def _check_cache(
+    cache,
+    cache_key: str,
+    query_embedding: np.ndarray,
+) -> dict | None:
+    """Check cache for existing result and record metrics.
+
+    Returns cached result if found, None otherwise.
+    """
+    cached, hit_type = cache.get(cache_key, query_embedding)
+    record_cache_event(f"hit_{hit_type}" if hit_type != "miss" else "miss")
+    return cached
+
+
+def _generate_explanation_for_product(
+    query: str,
+    product: ProductScore,
+    explainer,
+    detector,
+) -> tuple:
+    """Generate explanation, HHEM score, and citation verification for a product.
+
+    Thread-safe: LLM clients use httpx, HHEM model is read-only.
+    Returns (ExplanationResult, HallucinationResult, CitationVerificationResult).
+    """
+    er = explainer.generate_explanation(
+        query=query,
+        product=product,
+        max_evidence=MAX_EVIDENCE,
+    )
+    hr = detector.check_explanation(
+        evidence_texts=er.evidence_texts,
+        explanation=er.explanation,
+    )
+    cr = verify_citations(er.explanation, er.evidence_ids, er.evidence_texts)
+    return er, hr, cr
+
+
+def _generate_explanations_parallel(
+    query: str,
+    products: list[ProductScore],
+    explainer,
+    detector,
+) -> list[tuple[ProductScore, tuple]]:
+    """Generate explanations for multiple products in parallel.
+
+    Uses ThreadPoolExecutor with per-worker timeout to prevent hung workers
+    from exhausting the pool. Products that timeout or fail are skipped.
+    """
+    results = []
+    with ThreadPoolExecutor(
+        max_workers=min(len(products), _MAX_EXPLAIN_WORKERS)
+    ) as pool:
+        futures = {
+            pool.submit(
+                _generate_explanation_for_product, query, p, explainer, detector
+            ): p
+            for p in products
+        }
+        for future in futures:
+            product = futures[future]
+            try:
+                result = future.result(timeout=_EXPLAIN_WORKER_TIMEOUT)
+                results.append((product, result))
+            except FuturesTimeoutError:
+                logger.warning(
+                    "Explanation timeout for product %s after %.1fs",
+                    product.product_id,
+                    _EXPLAIN_WORKER_TIMEOUT,
+                )
+            except Exception:
+                logger.exception(
+                    "Explanation failed for product %s", product.product_id
+                )
+    return results
+
+
+def _build_recommendation_with_explanation(
+    rank: int,
+    product: ProductScore,
+    er: ExplanationResult,
+    hr,
+    cr,
+) -> dict:
+    """Build recommendation dict with explanation and confidence metrics."""
+    rec = _build_product_dict(rank, product)
+    rec["explanation"] = er.explanation
+    rec["confidence"] = {
+        "hhem_score": round(hr.score, 3),
+        "is_grounded": not hr.is_hallucinated,
+        "threshold": hr.threshold,
+    }
+    rec["citations_verified"] = cr.all_valid
+    rec["evidence_sources"] = _build_evidence_list(er)
+    return rec
+
+
 def _sync_recommend(
     body: RecommendationRequest,
     app,
@@ -361,77 +468,44 @@ def _sync_recommend(
     cache = app.state.cache
     q = body.query
     explain = body.explain
+    min_rating = body.filters.min_rating if body.filters else 4.0
+    cache_key = _build_cache_key(q, body.k, explain, min_rating)
 
-    # Check cache before any heavy work (only for the explain path).
-    # The embedding computed here is reused for candidate retrieval below,
-    # avoiding the cost of a second embed_single_query call.
+    # Check cache before any heavy work (explain path only).
+    # Embedding computed here is reused for candidate retrieval.
     if explain:
         query_embedding = app.state.embedder.embed_single_query(q)
-        cached, hit_type = cache.get(q, query_embedding)
-        record_cache_event(f"hit_{hit_type}" if hit_type != "miss" else "miss")
-        if cached is not None:
+        if (cached := _check_cache(cache, cache_key, query_embedding)) is not None:
             return cached
     else:
         query_embedding = None
 
     products = _fetch_products(body, app, query_embedding=query_embedding)
-
     if not products:
         return {"query": q, "recommendations": []}
 
-    recommendations = []
-
+    # Build recommendations with or without explanations
     if explain:
         if app.state.explainer is None:
             raise RuntimeError("Explanation service unavailable")
 
-        explainer = app.state.explainer
-        detector = app.state.detector
-
-        def _explain(product: ProductScore):
-            # Thread safety: LLM clients use httpx (thread-safe).
-            # HHEM model in eval() + no_grad() = read-only forward
-            # pass with no state mutation. Tokenizer is stateless.
-            er = explainer.generate_explanation(
-                query=q,
-                product=product,
-                max_evidence=MAX_EVIDENCE,
-            )
-            hr = detector.check_explanation(
-                evidence_texts=er.evidence_texts,
-                explanation=er.explanation,
-            )
-            cr = verify_citations(er.explanation, er.evidence_ids, er.evidence_texts)
-            return er, hr, cr
-
-        with ThreadPoolExecutor(
-            max_workers=min(len(products), _MAX_EXPLAIN_WORKERS)
-        ) as pool:
-            results = list(pool.map(_explain, products))
-
-        for i, (product, (er, hr, cr)) in enumerate(
-            zip(products, results, strict=True),
-            1,
-        ):
-            rec = _build_product_dict(i, product)
-            rec["explanation"] = er.explanation
-            rec["confidence"] = {
-                "hhem_score": round(hr.score, 3),
-                "is_grounded": not hr.is_hallucinated,
-                "threshold": hr.threshold,
-            }
-            rec["citations_verified"] = cr.all_valid
-            rec["evidence_sources"] = _build_evidence_list(er)
-            recommendations.append(rec)
+        explanation_results = _generate_explanations_parallel(
+            q, products, app.state.explainer, app.state.detector
+        )
+        recommendations = [
+            _build_recommendation_with_explanation(i, product, er, hr, cr)
+            for i, (product, (er, hr, cr)) in enumerate(explanation_results, 1)
+        ]
     else:
-        for i, product in enumerate(products, 1):
-            recommendations.append(_build_product_dict(i, product))
+        recommendations = [
+            _build_product_dict(i, product) for i, product in enumerate(products, 1)
+        ]
 
     result = {"query": q, "recommendations": recommendations}
 
-    # Store in cache (explain path only; embedding was computed above)
+    # Store in cache (explain path only)
     if explain:
-        cache.put(q, query_embedding, result)
+        cache.put(cache_key, query_embedding, result)
 
     return result
 

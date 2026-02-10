@@ -13,6 +13,7 @@ non-existent review IDs.
 import re
 from dataclasses import dataclass
 
+from sage.config import CITATION_PREFIX
 from sage.core.models import (
     CitationResult,
     CitationVerificationResult,
@@ -218,16 +219,17 @@ def extract_citations(text: str) -> list[tuple[str, str | None]]:
 
     # Pattern for quote followed by citation(s): "quote" [review_123] or [review_123, review_456]
     quote_citation_pattern = r'"([^"]+)"\s*\[([^\]]+)\]'
+    citation_id_pattern = rf"{re.escape(CITATION_PREFIX)}\d+"
     for match in re.finditer(quote_citation_pattern, text):
         quote_text = match.group(1)
         citation_block = match.group(2)
         # Split multiple citations like "review_123, review_456"
-        for citation_id in re.findall(r"review_\d+", citation_block):
+        for citation_id in re.findall(citation_id_pattern, citation_block):
             citations.append((citation_id, quote_text))
 
     # Pattern for standalone citations not preceded by a quote
     # Find all citations, then filter out ones already captured with quotes
-    all_citation_ids = set(re.findall(r"review_\d+", text))
+    all_citation_ids = set(re.findall(citation_id_pattern, text))
     quoted_citation_ids = {c[0] for c in citations}
     standalone_ids = all_citation_ids - quoted_citation_ids
 

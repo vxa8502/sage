@@ -136,6 +136,13 @@ CACHE_TTL_SECONDS = float(os.getenv("CACHE_TTL_SECONDS", "3600"))
 
 
 # ---------------------------------------------------------------------------
+# Citation Format
+# ---------------------------------------------------------------------------
+
+CITATION_PREFIX = "review_"  # Prefix for citation IDs (e.g., "review_123")
+
+
+# ---------------------------------------------------------------------------
 # Evidence Quality Gate
 # ---------------------------------------------------------------------------
 
@@ -244,6 +251,8 @@ __all__ = [
     "CACHE_SIMILARITY_THRESHOLD",
     "CACHE_MAX_ENTRIES",
     "CACHE_TTL_SECONDS",
+    # Citation
+    "CITATION_PREFIX",
     # Evidence gate
     "MAX_EVIDENCE",
     "MIN_EVIDENCE_CHUNKS",

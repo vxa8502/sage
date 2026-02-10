@@ -1,8 +1,9 @@
 """
-Request latency middleware and graceful shutdown coordinator.
+Request latency middleware, security headers, and graceful shutdown coordinator.
 
 Logs method/path/status/elapsed_ms for every request and records
-Prometheus histogram observations. Adds ``X-Response-Time-Ms`` header.
+Prometheus histogram observations. Adds security headers and
+``X-Response-Time-Ms`` header.
 
 Uses a pure ASGI middleware (not BaseHTTPMiddleware) to avoid buffering
 SSE streams.
@@ -24,6 +25,7 @@ from dataclasses import dataclass, field
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from sage.api.context import set_request_id
 from sage.api.metrics import observe_duration, record_request
 from sage.config import get_logger
 
@@ -192,6 +194,7 @@ class LatencyMiddleware:
 
         start = time.perf_counter()
         request_id = uuid.uuid4().hex[:12]
+        set_request_id(request_id)  # Propagate to all child operations
         status = 500  # default until we see http.response.start
 
         async def send_wrapper(message: Message) -> None:
@@ -202,8 +205,17 @@ class LatencyMiddleware:
                 # The Prometheus histogram (in finally) measures total time.
                 elapsed_ms = (time.perf_counter() - start) * 1000
                 headers = list(message.get("headers", []))
+                # Timing and correlation headers
                 headers.append((b"x-response-time-ms", f"{elapsed_ms:.1f}".encode()))
                 headers.append((b"x-request-id", request_id.encode()))
+                # Security headers
+                headers.append((b"x-content-type-options", b"nosniff"))
+                headers.append((b"x-frame-options", b"DENY"))
+                headers.append((b"x-xss-protection", b"1; mode=block"))
+                headers.append((b"referrer-policy", b"strict-origin-when-cross-origin"))
+                headers.append(
+                    (b"cache-control", b"no-store, no-cache, must-revalidate")
+                )
                 message = {**message, "headers": headers}
             await send(message)
 

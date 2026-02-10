@@ -72,11 +72,20 @@ class ConsoleFormatter(logging.Formatter):
         "ERROR": "\033[31m",  # Red
         "CRITICAL": "\033[35m",  # Magenta
         "RESET": "\033[0m",
+        "DIM": "\033[2m",  # Dim for request ID
     }
 
     def format(self, record: logging.LogRecord) -> str:
         # Check if we're in a TTY (supports colors)
         use_colors = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+        # Get request ID from context
+        try:
+            from sage.api.context import get_request_id
+
+            request_id = get_request_id()
+        except ImportError:
+            request_id = "-"
 
         # Format timestamp
         timestamp = self.formatTime(record, "%H:%M:%S")
@@ -86,9 +95,12 @@ class ConsoleFormatter(logging.Formatter):
         if use_colors:
             color = self.COLORS.get(level, "")
             reset = self.COLORS["RESET"]
+            dim = self.COLORS["DIM"]
             level_str = f"{color}{level:<8}{reset}"
+            rid_str = f"{dim}[{request_id}]{reset}" if request_id != "-" else ""
         else:
             level_str = f"{level:<8}"
+            rid_str = f"[{request_id}]" if request_id != "-" else ""
 
         # Format message
         message = record.getMessage()
@@ -101,6 +113,8 @@ class ConsoleFormatter(logging.Formatter):
 
         extra_str = f" [{', '.join(extras)}]" if extras else ""
 
+        if rid_str:
+            return f"{timestamp} {level_str} {rid_str} {message}{extra_str}"
         return f"{timestamp} {level_str} {message}{extra_str}"
 
 
@@ -116,10 +130,19 @@ class JSONFormatter(logging.Formatter):
         import json
         from datetime import datetime, timezone
 
+        # Import here to avoid circular imports
+        try:
+            from sage.api.context import get_request_id
+
+            request_id = get_request_id()
+        except ImportError:
+            request_id = "-"
+
         log_entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
+            "request_id": request_id,
             "message": record.getMessage(),
         }
 
