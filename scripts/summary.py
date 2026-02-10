@@ -136,6 +136,50 @@ def main():
     else:
         print("  (not available)")
 
+    # -- Grounding Delta -------------------------------------------------------
+    delta = load_json(RESULTS_DIR / "grounding_delta_latest.json")
+    print_section("Grounding Delta (RAG Impact):")
+    if delta:
+        with_ev = delta.get("with_evidence_mean")
+        without_ev = delta.get("without_evidence_mean")
+        d = delta.get("delta")
+        n = delta.get("n_samples", 0)
+        print(f"  With evidence:  {fmt(with_ev, 3)}")
+        print(f"  Without:        {fmt(without_ev, 3)}")
+        print(f"  Delta:          {fmt(d, 3)}  (+{d * 100:.0f}pp, n={n})")
+    else:
+        print("  (not available)")
+
+    # -- Refusal Rate ----------------------------------------------------------
+    adj = load_json(RESULTS_DIR / "adjusted_faithfulness_latest.json")
+    print_section("Quality Gate (Refusals):")
+    if adj:
+        n_total = adj.get("n_total", 0)
+        n_refusals = adj.get("n_refusals", 0)
+        rate = n_refusals / n_total if n_total > 0 else 0
+        adj_pass = adj.get("adjusted_pass_rate")
+        print(f"  Refusals:       {n_refusals}/{n_total}  ({rate * 100:.0f}%)")
+        print(f"  Adj Pass Rate:  {fmt(adj_pass, 3)}")
+    else:
+        print("  (not available)")
+
+    # -- Load Test -------------------------------------------------------------
+    load = load_json(RESULTS_DIR / "load_test_latest.json")
+    print_section("Production Latency:")
+    if load:
+        p50 = load.get("p50_ms")
+        p95 = load.get("p95_ms")
+        p99 = load.get("p99_ms")
+        n = load.get("total_requests", 0)
+        hits = load.get("cache_hits", 0)
+        hit_rate = hits / n if n > 0 else 0
+        print(f"  P50:            {p50:.0f}ms")
+        print(f"  P95:            {p95:.0f}ms")
+        print(f"  P99:            {p99:.0f}ms  (n={n})")
+        print(f"  Cache hits:     {hits}/{n}  ({hit_rate * 100:.0f}%)")
+    else:
+        print("  (not available)")
+
     # -- Footer ---------------------------------------------------------------
     print(f"\nResults: {RESULTS_DIR}/")
     print(SEP)

@@ -12,9 +12,6 @@ app_port: 7860
 
 A recommendation system that refuses to hallucinate.
 
-<!-- TODO: Replace with actual demo GIF or screenshot before making repo public -->
-<!-- ![Demo GIF showing API response with grounded explanation](docs/demo.gif) -->
-
 ```json
 {
   "query": "budget bluetooth headphones",
@@ -26,7 +23,7 @@ A recommendation system that refuses to hallucinate.
 }
 ```
 
-**Live demo:** [vxa8502-sage.hf.space](https://vxa8502-sage.hf.space)
+**Try it:** [vxa8502-sage.hf.space](https://vxa8502-sage.hf.space) (API explorer with Swagger UI)
 
 ---
 
@@ -46,7 +43,7 @@ Product recommendations without explanations are black boxes. Users see "You mig
 | Claim-level faithfulness (HHEM) | > 0.85 | 0.968 | Pass |
 | Human evaluation (n=50) | > 3.5/5 | 3.6/5 | Pass |
 | P99 latency (production) | < 500ms | 283ms | Pass |
-| P99 latency (cache hit) | < 100ms | 88ms | Pass |
+| Median latency (cached) | < 100ms | 88ms | Pass |
 
 **Grounding impact:** Explanations generated WITH evidence score 73% on HHEM. WITHOUT evidence: 2.6%. RAG grounding reduces hallucination by 70 percentage points.
 
@@ -79,7 +76,7 @@ User Query: "wireless earbuds for running"
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Data flow:** 1M Amazon reviews → 5-core filter → 334K reviews → semantic chunking → 423K chunks in Qdrant.
+**Data flow:** 1M Amazon reviews → 5-core filter → 334K reviews → semantic chunking → 423K chunks in Qdrant. *([pipeline.py](scripts/pipeline.py) | [Kaggle notebook](scripts/kaggle_pipeline.ipynb))*
 
 ---
 
@@ -123,7 +120,7 @@ cd sage
 cp .env.example .env
 # Edit .env: add ANTHROPIC_API_KEY (or OPENAI_API_KEY)
 
-docker-compose up
+docker compose up
 curl http://localhost:8000/health
 ```
 
@@ -189,7 +186,17 @@ Prometheus metrics: `sage_request_latency_seconds`, `sage_cache_events_total`, `
 ### GET /cache/stats
 
 ```json
-{"size": 42, "hit_rate": 0.35, "exact_hits": 10, "semantic_hits": 5, "misses": 27}
+{
+  "size": 42,
+  "max_entries": 1000,
+  "exact_hits": 10,
+  "semantic_hits": 5,
+  "misses": 27,
+  "evictions": 0,
+  "hit_rate": 0.35,
+  "ttl_seconds": 3600.0,
+  "similarity_threshold": 0.92
+}
 ```
 
 ---
@@ -207,7 +214,7 @@ See `make help` for all targets.
 
 ---
 
-## Project Structure
+## Project Structure (Key Directories)
 
 ```
 sage/
