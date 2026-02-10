@@ -270,7 +270,7 @@ class FaithfulnessEvaluator:
             show_progress=True,
         )
 
-        df = result.to_pandas()
+        df = result.to_pandas()  # type: ignore[union-attr]
         scores = df["faithfulness"].tolist()
 
         individual_results = [

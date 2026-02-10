@@ -4,6 +4,11 @@
 # Configurable Variables (override: make demo QUERY="gaming mouse")
 # ---------------------------------------------------------------------------
 
+VENV_BIN := .venv/bin
+PYTHON := $(VENV_BIN)/python
+RUFF := $(VENV_BIN)/ruff
+MYPY := $(VENV_BIN)/mypy
+
 QUERY ?= wireless headphones with noise cancellation
 TOP_K ?= 1
 SAMPLES ?= 10
@@ -306,18 +311,18 @@ human-eval-status:
 # ---------------------------------------------------------------------------
 
 fmt:
-	ruff format sage/ scripts/ tests/
-	ruff check --fix sage/ scripts/ tests/
+	$(RUFF) format sage/ scripts/ tests/
+	$(RUFF) check --fix sage/ scripts/ tests/
 
 lint:
-	ruff check sage/ scripts/ tests/
-	ruff format --check sage/ scripts/ tests/
+	$(RUFF) check sage/ scripts/ tests/
+	$(RUFF) format --check sage/ scripts/ tests/
 
 typecheck:
-	mypy sage/ --ignore-missing-imports
+	$(MYPY) sage/ --ignore-missing-imports
 
 test:
-	python -m pytest tests/ -v
+	$(PYTHON) -m pytest tests/ -v
 
 ci: lint typecheck test
 	@echo "All CI checks passed"
