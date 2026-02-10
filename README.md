@@ -105,7 +105,7 @@ When you give an LLM one short review as context, it fills in the gaps with plau
 | **No image features** | Misses visual product attributes | Could add CLIP embeddings in future |
 | **English only** | Non-English reviews have lower retrieval quality | E5 is primarily English-trained |
 | **Cache invalidation manual** | Stale explanations possible | TTL-based expiry (1 hour); manual `/cache/clear` |
-| **LLM latency on free tier** | P99 ~4s with explanations | Retrieval alone is 283ms; cache hits are 88ms |
+| **Cold start latency** | First request ~10s (HF Spaces wake) | Subsequent requests P99 < 500ms; cache hits 88ms |
 | **No user personalization** | Same results for all users | Would need user history for collaborative filtering |
 
 ---
@@ -116,7 +116,7 @@ When you give an LLM one short review as context, it fills in the gaps with plau
 
 ```bash
 git clone https://github.com/vxa8502/sage-recommendations
-cd sage
+cd sage-recommendations
 cp .env.example .env
 # Edit .env: add ANTHROPIC_API_KEY (or OPENAI_API_KEY)
 
@@ -195,7 +195,8 @@ Prometheus metrics: `sage_request_latency_seconds`, `sage_cache_events_total`, `
   "evictions": 0,
   "hit_rate": 0.35,
   "ttl_seconds": 3600.0,
-  "similarity_threshold": 0.92
+  "similarity_threshold": 0.92,
+  "avg_semantic_similarity": 0.95
 }
 ```
 
@@ -218,6 +219,7 @@ See `make help` for all targets (including `eval-quick`, `load-test`).
 sage/
 ├── adapters/       # External integrations (Qdrant, LLM, HHEM)
 ├── api/            # FastAPI routes, middleware, Prometheus metrics
+├── config/         # Settings, constants, query templates
 ├── core/           # Domain models, aggregation, verification, chunking
 ├── services/       # Business logic (retrieval, explanation, cache)
 scripts/
