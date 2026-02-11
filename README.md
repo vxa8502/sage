@@ -181,7 +181,7 @@ Server-sent events for token-by-token explanation streaming.
 
 ### GET /metrics
 
-Prometheus metrics: `sage_request_latency_seconds`, `sage_cache_events_total`, `sage_errors_total`.
+Prometheus metrics including `sage_requests_total`, `sage_request_latency_seconds`, `sage_cache_events_total`, `sage_errors_total`.
 
 ### GET /cache/stats
 
@@ -219,7 +219,7 @@ See `make help` for all targets (including `eval-quick`, `load-test`).
 sage/
 ├── adapters/       # External integrations (Qdrant, LLM, HHEM)
 ├── api/            # FastAPI routes, middleware, Prometheus metrics
-├── config/         # Settings, constants, query templates
+├── config/         # Settings, logging, query templates
 ├── core/           # Domain models, aggregation, verification, chunking
 ├── services/       # Business logic (retrieval, explanation, cache)
 scripts/
