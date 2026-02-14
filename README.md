@@ -8,6 +8,10 @@ app_port: 7860
 ---
 <!-- HF Spaces metadata above; hidden on HF, visible on GitHub -->
 
+[![CI](https://github.com/vxa8502/sage-recommendations/actions/workflows/ci.yml/badge.svg)](https://github.com/vxa8502/sage-recommendations/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Demo](https://img.shields.io/badge/demo-Live-green)](https://vxa8502-sage.hf.space)
+
 # Sage
 
 A recommendation system that refuses to hallucinate.
