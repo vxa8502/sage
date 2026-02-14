@@ -80,7 +80,7 @@ User Query: "wireless earbuds for running"
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Data flow:** 1M Amazon reviews → 5-core filter → 334K reviews → semantic chunking → 423K chunks in Qdrant. *([pipeline.py](scripts/pipeline.py) | [Kaggle notebook](scripts/kaggle_pipeline.ipynb))*
+**Data flow:** Amazon Electronics reviews (1M raw) → 5-core filter → 334K reviews → semantic chunking → 423K chunks in Qdrant. *([pipeline.py](scripts/pipeline.py) | [Kaggle notebook](scripts/kaggle_pipeline.ipynb))*
 
 ---
 
